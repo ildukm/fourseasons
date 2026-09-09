@@ -85,6 +85,12 @@
     letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 8px;
   }
 
+  /* Female badge (default is male, so only women are marked) */
+  .f {
+    display: inline-block; font-size: 10px; font-weight: 600; line-height: 1.4; color: var(--ink-3);
+    border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; flex: none; vertical-align: 1px;
+  }
+
   /* Player picker */
   .group { display: grid; gap: 8px; }
   .group + .group { margin-top: 10px; }
@@ -95,10 +101,12 @@
     padding: 8px 14px; font-size: 15px; font-weight: 500; min-height: 40px;
     transition: transform .08s ease;
   }
+  .chip .f { margin-left: 4px; }
   .chip:active { transform: scale(.97); }
   .chip[aria-pressed="true"] {
     background: var(--ball); color: var(--ball-ink); border-color: var(--ball); font-weight: 700;
   }
+  .chip[aria-pressed="true"] .f { color: var(--ball-ink); border-color: var(--ball-ink); opacity: .7; }
 
   /* My schedule */
   .me {
@@ -151,6 +159,7 @@
     text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
   }
   .court-name::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: currentColor; }
+  .court-name .type { margin-left: auto; font-size: 12px; font-weight: 600; letter-spacing: .06em; color: var(--ink-2); }
   .court.c1 .court-name { color: var(--court1); }
   .court.c2 .court-name { color: var(--court2); }
   .team { display: grid; gap: 4px; }
@@ -167,9 +176,8 @@
     font-size: 15px; font-weight: 500; line-height: 1.25; min-width: 0;
   }
   .p .n { overflow-wrap: anywhere; }
-  .p .r { font-size: 10px; color: var(--ink-3); font-weight: 500; flex: none; letter-spacing: .04em; }
   .p.hit { background: var(--ball); color: var(--ball-ink); font-weight: 700; }
-  .p.hit .r { color: var(--ball-ink); opacity: .7; }
+  .p.hit .f { color: var(--ball-ink); border-color: var(--ball-ink); opacity: .7; }
   .court.mine.c1 { background: var(--court1-soft); }
   .court.mine.c2 { background: var(--court2-soft); }
   .round.resting-me .round-head { box-shadow: inset 4px 0 0 var(--ball); }
@@ -198,7 +206,7 @@
     <div>
       <div class="eyebrow">Four Seasons Tennis</div>
       <h1>복식 대진표</h1>
-      <div class="meta">2코트 · 10명 · 5라운드 · 각 4게임, 휴식 1회</div>
+      <div class="meta">2코트 · 10명 · 10라운드 · 각 8게임, 휴식 2회</div>
     </div>
     <a class="icon-btn" id="setupLink" href="setup.html" style="text-decoration:none">명단 설정</a>
   </header>
@@ -224,26 +232,26 @@
     <div class="rounds" id="rounds"></div>
   </section>
 
-  <footer>팀은 클럽원 1명 + 게스트 1명으로 구성됩니다. 같은 파트너와 두 번 짝을 이루지 않습니다.</footer>
+  <footer>여성이 있는 경기는 여복 또는 혼복으로 편성됩니다. 같은 파트너와는 되도록 두 번 짝을 이루지 않습니다.</footer>
 </div>
 
 <script>
-  // 라운드 r에서는 클럽원 r번, 게스트 r번이 휴식. 팀 = [클럽원, 게스트].
-  // 각 코트: [팀A, 팀B]. 같은 파트너 조합은 5라운드 동안 반복되지 않음.
-  const SCHEDULE = [
-    [[[1,1],[4,2]], [[3,4],[2,3]]],
-    [[[0,3],[2,0]], [[3,2],[4,4]]],
-    [[[1,4],[3,3]], [[4,1],[0,0]]],
-    [[[0,1],[1,2]], [[2,4],[4,0]]],
-    [[[0,2],[3,0]], [[1,3],[2,1]]],
-  ];
+  // ---- 명단과 대진 ----
+  const R = 10;  // 라운드 수
   const COURT_NAMES = ['1코트', '2코트'];
+  const TYPE_NAMES = ['남복', '혼복', '여복'];
+  const idxToPid = (i) => i < 5 ? 'm' + i : 'g' + (i - 5);
+  // 대진은 setup.html이 생성해서 링크에 담아 온다. 아래는 링크가 없을 때 보여줄 자리표시자.
   const DEFAULT_NAMES = {
     m: ['권순범', '김일두', '손원식', '정성진', '조진희'],
     g: ['게스트 1', '게스트 2', '게스트 3', '게스트 4', '게스트 5'],
+    w: ['m4'],
+    s: '1839560742824173095647925368100491573682347806129598260354716958170243273105486964237915080825941637',
   };
 
-  // 명단은 쿼리스트링으로 받음: ?m=클럽원1,클럽원2,...&g=게스트1,게스트2,...
+  // 쿼리스트링: ?m=클럽원1,...&g=게스트1,...&w=여성id,...&s=대진
+  //  w: 여성인 사람의 id (예 m4,g1). 없으면 전원 남
+  //  s: 라운드당 10자리(1코트 4명, 2코트 4명, 휴식 2명. 0~4 클럽원, 5~9 게스트) x 10라운드 = 100자리
   const names = loadNames();
   let me = safeGet('fs-me') || null; // "m2" / "g4"
 
@@ -254,15 +262,40 @@
     const q = new URLSearchParams(location.search);
     const parse = (v) => (v || '').split(',').map(s => s.trim()).filter(Boolean);
     const m = parse(q.get('m')), g = parse(q.get('g'));
-    if (m.length === 5 && g.length === 5) return { m, g };
+    const w = parse(q.get('w')).filter(s => /^[mg][0-4]$/.test(s));
+    const s = q.get('s') || '';
+    if (m.length === 5 && g.length === 5 && isValidSchedule(s)) return { m, g, w, s };
     document.getElementById('notice').hidden = false;
-    return { m: [...DEFAULT_NAMES.m], g: [...DEFAULT_NAMES.g] };
+    return { ...DEFAULT_NAMES };
+  }
+
+  function isValidSchedule(s) {
+    if (!/^[0-9]{100}$/.test(s)) return false;
+    for (let r = 0; r < R; r++) if (new Set(s.slice(r * 10, r * 10 + 10)).size !== 10) return false;
+    return true;
   }
 
   const id = (role, i) => role + i;
   const nameOf = (pid) => names[pid[0]][+pid[1]];
   const roleLabel = (pid) => pid[0] === 'm' ? '클럽원' : '게스트';
-  const team = ([mi, gi]) => [id('m', mi), id('g', gi)];
+  const isFemale = (pid) => names.w.includes(pid);
+  const fBadge = (pid) => isFemale(pid) ? '<span class="f">여</span>' : '';
+
+  // 코트 한 면 [a,b] vs [x,y]의 경기 종류. 양 팀 여성 수가 다르면 null.
+  function matchType([a, b], [x, y]) {
+    const fa = isFemale(a) + isFemale(b), fb = isFemale(x) + isFemale(y);
+    return fa === fb ? TYPE_NAMES[fa] : null;
+  }
+
+  // SCHEDULE[r] = { courts: [{ teams: [[pid, pid], [pid, pid]], type }, ...], rest: [pid, pid] }
+  const SCHEDULE = Array.from({ length: R }, (_, r) => {
+    const row = [...names.s.slice(r * 10, r * 10 + 10)].map(d => idxToPid(+d));
+    const courts = [0, 4].map(c => {
+      const teams = [[row[c], row[c + 1]], [row[c + 2], row[c + 3]]];
+      return { teams, type: matchType(...teams) };
+    });
+    return { courts, rest: [row[8], row[9]] };
+  });
 
   function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
@@ -277,7 +310,7 @@
       const el = document.getElementById(role === 'm' ? 'chipsM' : 'chipsG');
       el.innerHTML = names[role].map((n, i) => {
         const pid = id(role, i);
-        return `<button type="button" class="chip" data-pid="${pid}" aria-pressed="${pid === me}">${esc(n)}</button>`;
+        return `<button type="button" class="chip" data-pid="${pid}" aria-pressed="${pid === me}">${esc(n)}${fBadge(pid)}</button>`;
       }).join('');
     }
   }
@@ -288,19 +321,19 @@
       el.innerHTML = `<div class="me-empty">위에서 내 이름을 누르면 라운드별 코트와 파트너가 여기에 표시됩니다.</div>`;
       return;
     }
-    const rows = SCHEDULE.map((courts, r) => {
+    const rows = SCHEDULE.map(({ courts }, r) => {
       let html = '';
-      courts.forEach((match, c) => {
-        match.forEach((t, side) => {
-          const [a, b] = team(t);
+      courts.forEach(({ teams, type }, c) => {
+        teams.forEach((t, side) => {
+          const [a, b] = t;
           if (a !== me && b !== me) return;
           const partner = a === me ? b : a;
-          const [o1, o2] = team(match[1 - side]);
+          const [o1, o2] = teams[1 - side];
           html = `
             <div class="me-row">
               <div class="me-round"><small>ROUND</small>${r + 1}</div>
               <div class="court-tag c${c + 1}">${COURT_NAMES[c]}</div>
-              <div class="me-detail">파트너 <b>${esc(nameOf(partner))}</b><br>
+              <div class="me-detail">${type ? `<span class="dim">${type}</span> · ` : ''}파트너 <b>${esc(nameOf(partner))}</b><br>
                 <span class="dim">상대</span> ${esc(nameOf(o1))} · ${esc(nameOf(o2))}</div>
             </div>`;
         });
@@ -316,22 +349,21 @@
       return html;
     }).join('');
     el.innerHTML = `
-      <div class="me-head"><strong>${esc(nameOf(me))}</strong><span>${roleLabel(me)} · 4게임 · 휴식 1회</span></div>
+      <div class="me-head"><strong>${esc(nameOf(me))}</strong><span>${roleLabel(me)} · 8게임 · 휴식 2회</span></div>
       ${rows}`;
   }
 
   function renderRounds() {
     const el = document.getElementById('rounds');
-    el.innerHTML = SCHEDULE.map((courts, r) => {
-      const resting = [id('m', r), id('g', r)];
-      const restingMe = me && resting.includes(me);
-      const courtsHtml = courts.map((match, c) => {
-        const [tA, tB] = match.map(team);
+    el.innerHTML = SCHEDULE.map(({ courts, rest }, r) => {
+      const restingMe = me && rest.includes(me);
+      const courtsHtml = courts.map(({ teams, type }, c) => {
+        const [tA, tB] = teams;
         const mine = me && [...tA, ...tB].includes(me);
-        const p = (pid) => `<div class="p${pid === me ? ' hit' : ''}"><span class="n">${esc(nameOf(pid))}</span><span class="r">${roleLabel(pid)}</span></div>`;
+        const p = (pid) => `<div class="p${pid === me ? ' hit' : ''}"><span class="n">${esc(nameOf(pid))}</span>${fBadge(pid)}</div>`;
         return `
           <div class="court c${c + 1}${mine ? ' mine' : ''}">
-            <div class="court-name">${COURT_NAMES[c]}</div>
+            <div class="court-name">${COURT_NAMES[c]}${type ? `<span class="type">${type}</span>` : ''}</div>
             <div class="team">${p(tA[0])}${p(tA[1])}</div>
             <div class="vs">VS</div>
             <div class="team">${p(tB[0])}${p(tB[1])}</div>
@@ -341,7 +373,7 @@
         <article class="round${restingMe ? ' resting-me' : ''}">
           <div class="round-head">
             <h2>ROUND ${r + 1}</h2>
-            <div class="resting">휴식 <b>${esc(nameOf(resting[0]))}</b> · <b>${esc(nameOf(resting[1]))}</b></div>
+            <div class="resting">휴식 <b>${esc(nameOf(rest[0]))}</b> · <b>${esc(nameOf(rest[1]))}</b></div>
           </div>
           <div class="courts">${courtsHtml}</div>
         </article>`;

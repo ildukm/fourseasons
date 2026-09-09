@@ -61,7 +61,7 @@
   }
   .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
   .fields { display: grid; gap: 10px; }
-  .field { display: grid; grid-template-columns: 28px 1fr; align-items: center; gap: 10px; }
+  .field { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 10px; }
   .field .no {
     font-family: var(--display); font-weight: 700; font-size: 20px; color: var(--ink-3);
     text-align: center; font-variant-numeric: tabular-nums;
@@ -72,6 +72,12 @@
   }
   input::placeholder { color: var(--ink-3); }
   .hint { font-size: 12px; color: var(--ink-2); margin: 6px 0 0; }
+  .sex { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .sex label { position: relative; }
+  .sex input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+  .sex span { display: block; padding: 10px 12px; font-size: 14px; color: var(--ink-2); }
+  .sex input:checked + span { background: var(--ink); color: var(--bg); font-weight: 500; }
+  .sex input:focus-visible + span { outline: 3px solid var(--focus); outline-offset: -3px; }
 
   .build {
     width: 100%; border: 0; border-radius: 12px; padding: 14px;
@@ -79,6 +85,7 @@
     font-family: var(--display); font-weight: 700; font-size: 22px; letter-spacing: .08em;
   }
   .build:active { transform: scale(.99); }
+  .build:disabled { opacity: .6; cursor: default; }
 
   .result { display: none; background: var(--court1-soft); border-color: transparent; }
   .result.show { display: grid; gap: 12px; }
@@ -89,6 +96,13 @@
     color: var(--ink-2); max-height: 120px; overflow: auto;
   }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .summary { width: 100%; border-collapse: collapse; font-size: 14px; background: var(--surface); border-radius: 8px; overflow: hidden; }
+  .summary th, .summary td { padding: 7px 10px; text-align: center; border-bottom: 1px solid var(--line); }
+  .summary tr:last-child td { border-bottom: 0; }
+  .summary th { font-family: var(--display); font-weight: 600; font-size: 14px; letter-spacing: .06em; color: var(--ink-2); background: var(--surface-2); }
+  .summary td:first-child { text-align: left; font-weight: 500; }
+  .summary .f { font-size: 10px; color: var(--ink-3); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-left: 4px; vertical-align: 1px; }
+  .summary .zero { color: var(--ink-3); }
   .btn {
     border: 1px solid var(--line); background: var(--surface); border-radius: 10px;
     padding: 10px 14px; font-weight: 500; text-decoration: none; color: var(--ink); flex: 1; text-align: center;
@@ -111,7 +125,7 @@
   <header>
     <div class="eyebrow">Four Seasons Tennis</div>
     <h1>명단 설정</h1>
-    <div class="meta">클럽원 5명과 게스트 5명을 입력하고 생성을 누르면 대진표 링크가 만들어집니다.</div>
+    <div class="meta">클럽원 5명과 게스트 5명의 이름과 성별을 입력하고 생성을 누르면 대진표 링크가 만들어집니다. 여성 인원에 맞춰 여복·혼복이 편성됩니다.</div>
   </header>
 
   <form id="form" class="wrap" style="padding:0;gap:18px" novalidate>
@@ -141,6 +155,7 @@
   <section class="card result" id="result">
     <h2>대진표 링크</h2>
     <div class="url" id="url"></div>
+    <table class="summary" id="summary"></table>
     <div class="actions">
       <button class="btn" type="button" id="copy">링크 복사</button>
       <a class="btn primary" id="open" href="#" target="_blank" rel="noopener">대진표 열기</a>
@@ -153,6 +168,7 @@
   const N = 5;
   const STORE = 'fs-setup';
   const CLUB_MEMBERS = ['권순범', '김일두', '손원식', '정성진', '조진희'];
+  const CLUB_WOMEN = ['조진희']; // 기본값은 남. 여기 있는 클럽원만 여로 시작
 
   function safeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function safeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
@@ -160,27 +176,47 @@
   let saved = {};
   try { saved = JSON.parse(safeGet(STORE)) || {}; } catch (e) {}
 
-  function fieldsHtml(prefix, values, ph) {
-    return Array.from({ length: N }, (_, i) => `
-      <label class="field">
+  function fieldsHtml(prefix, values, women, ph) {
+    return Array.from({ length: N }, (_, i) => {
+      const f = women.includes(prefix + i);
+      return `
+      <div class="field">
         <span class="no">${i + 1}</span>
-        <input type="text" name="${prefix}${i}" value="${esc(values[i] || '')}" placeholder="${ph} ${i + 1}" maxlength="12" autocomplete="off">
-      </label>`).join('');
+        <input type="text" name="${prefix}${i}" value="${esc(values[i] || '')}" placeholder="${ph} ${i + 1}" maxlength="12" autocomplete="off" aria-label="${ph} ${i + 1}">
+        <div class="sex" role="radiogroup" aria-label="${ph} ${i + 1} 성별">
+          <label><input type="radio" name="s${prefix}${i}" value="m"${f ? '' : ' checked'}><span>남</span></label>
+          <label><input type="radio" name="s${prefix}${i}" value="f"${f ? ' checked' : ''}><span>여</span></label>
+        </div>
+      </div>`;
+    }).join('');
   }
   function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
-  document.getElementById('members').innerHTML = fieldsHtml('m', saved.m || CLUB_MEMBERS, '클럽원');
-  document.getElementById('guests').innerHTML = fieldsHtml('g', saved.g || [], '게스트');
+  const defaultWomen = CLUB_MEMBERS.map((n, i) => CLUB_WOMEN.includes(n) ? 'm' + i : '').filter(Boolean);
+  const women = saved.w || defaultWomen;
+  document.getElementById('members').innerHTML = fieldsHtml('m', saved.m || CLUB_MEMBERS, women, '클럽원');
+  document.getElementById('guests').innerHTML = fieldsHtml('g', saved.g || [], women, '게스트');
   document.getElementById('base').value = saved.base || new URL('index.html', location.href).href;
 
   function readList(prefix) {
     const fd = new FormData(document.getElementById('form'));
     return Array.from({ length: N }, (_, i) => (fd.get(prefix + i) || '').trim());
   }
+  function readWomen() {
+    const fd = new FormData(document.getElementById('form'));
+    return ['m', 'g'].flatMap(prefix => Array.from({ length: N }, (_, i) => prefix + i).filter(pid => fd.get('s' + pid) === 'f'));
+  }
 
   document.getElementById('form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const m = readList('m'), g = readList('g');
+    const btn = e.target.querySelector('.build');
+    btn.disabled = true; btn.textContent = '생성 중…';
+    // 대진 생성이 잠깐 걸리므로 버튼 상태가 먼저 그려지게 한 뒤 실행
+    setTimeout(() => { try { build(); } finally { btn.disabled = false; btn.textContent = '생성'; } }, 20);
+  });
+
+  function build() {
+    const m = readList('m'), g = readList('g'), w = readWomen();
     const base = document.getElementById('base').value.trim();
     const err = document.getElementById('error');
 
@@ -200,7 +236,7 @@
     }
     err.hidden = true;
 
-    safeSet(STORE, JSON.stringify({ m, g, base }));
+    safeSet(STORE, JSON.stringify({ m, g, w, base }));
 
     let url;
     try {
@@ -212,13 +248,18 @@
     }
     url.searchParams.set('m', m.join(','));
     url.searchParams.set('g', g.join(','));
+    if (w.length) url.searchParams.set('w', w.join(',')); else url.searchParams.delete('w');
+    const isF = Array.from({ length: P }, (_, i) => w.includes(i < 5 ? 'm' + i : 'g' + (i - 5)) ? 1 : 0);
+    const rounds = buildSchedule(isF);
+    url.searchParams.set('s', rounds.map(row => row.join('')).join(''));
     const link = url.href;
+    document.getElementById('summary').innerHTML = summaryHtml(rounds, isF, [...m, ...g]);
 
     document.getElementById('url').textContent = link;
     document.getElementById('open').href = link;
     document.getElementById('result').classList.add('show');
     document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
+  }
 
   document.getElementById('copy').addEventListener('click', async () => {
     const link = document.getElementById('url').textContent;
@@ -229,6 +270,97 @@
       prompt('이 주소를 복사해 공유하세요', link);
     }
   });
+
+  // ---- 대진 생성 ----
+  const R = 10;  // 라운드 수
+  const P = 10;  // 인원. 0~4 클럽원, 5~9 게스트
+
+  // 페널티 가중치. 여성 경기는 여복/혼복이어야 한다는 조건이 가장 무겁다.
+  const W = { gender: 60, partner: 15, opp: 1, mix: 3, rest: 10 };
+
+  function scheduleCost(rounds, isF) {
+    let cost = 0;
+    const partner = new Uint8Array(P * P), opp = new Uint8Array(P * P);
+    const lastRest = new Int8Array(P).fill(-9);
+    const key = (a, b) => a < b ? a * P + b : b * P + a;
+    for (let r = 0; r < R; r++) {
+      const row = rounds[r];
+      for (let c = 0; c < 8; c += 4) {
+        const a = row[c], b = row[c + 1], x = row[c + 2], y = row[c + 3];
+        cost += W.gender * Math.abs(isF[a] + isF[b] - isF[x] - isF[y]);
+        partner[key(a, b)]++; partner[key(x, y)]++;
+        opp[key(a, x)]++; opp[key(a, y)]++; opp[key(b, x)]++; opp[key(b, y)]++;
+        if ((a < 5) === (b < 5)) cost += W.mix;
+        if ((x < 5) === (y < 5)) cost += W.mix;
+      }
+      for (const p of [row[8], row[9]]) {
+        const gap = r - lastRest[p];
+        if (gap < 3) cost += W.rest * (3 - gap);
+        lastRest[p] = r;
+      }
+    }
+    for (let i = 0; i < P * P; i++) {
+      if (partner[i] > 1) cost += W.partner * (partner[i] - 1);
+      cost += W.opp * opp[i] * opp[i];
+    }
+    return cost;
+  }
+
+  // rounds[r]: 길이 10 배열. [0..3] 1코트(0,1 vs 2,3), [4..7] 2코트(4,5 vs 6,7), [8,9] 휴식.
+  function buildSchedule(isF) {
+    const rounds = [];
+    for (let r = 0; r < R; r++) {
+      const rest = [r % 5, 5 + r % 5];
+      const play = [];
+      for (let p = 0; p < P; p++) if (p !== rest[0] && p !== rest[1]) play.push(p);
+      for (let i = play.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [play[i], play[j]] = [play[j], play[i]]; }
+      rounds.push([...play, ...rest]);
+    }
+    const swap = (row, i, j) => { const t = row[i]; row[i] = row[j]; row[j] = t; };
+    let cost = scheduleCost(rounds, isF);
+    const ITER = 60000;
+    for (let i = 0; i < ITER; i++) {
+      const T = 6 * (1 - i / ITER) + 0.05;
+      const r = (Math.random() * R) | 0, row = rounds[r];
+      let undo;
+      if (Math.random() < 0.8) {
+        // 같은 라운드 안에서 경기 자리 두 개를 바꾼다
+        const a = (Math.random() * 8) | 0, b = (Math.random() * 8) | 0;
+        if (a === b) continue;
+        swap(row, a, b);
+        undo = () => swap(row, a, b);
+      } else {
+        // 두 라운드의 휴식자를 맞바꾼다 (휴식 횟수는 그대로 2회씩 유지)
+        const r2 = (Math.random() * R) | 0, row2 = rounds[r2];
+        if (r2 === r) continue;
+        const ia = 8 + ((Math.random() * 2) | 0), ib = 8 + ((Math.random() * 2) | 0);
+        const jy = row.indexOf(row2[ib]), jx = row2.indexOf(row[ia]);
+        if (jy >= 8 || jx >= 8) continue;
+        swap(row, ia, jy); swap(row2, ib, jx);
+        undo = () => { swap(row, ia, jy); swap(row2, ib, jx); };
+      }
+      const c = scheduleCost(rounds, isF);
+      if (c <= cost || Math.random() < Math.exp((cost - c) / T)) cost = c; else undo();
+    }
+    return rounds;
+  }
+
+  // 인원별 남복/혼복/여복 횟수 표. 양 팀 여성 수가 다른 경기는 "기타"로 센다.
+  const TYPE_NAMES = ['남복', '혼복', '여복', '기타'];
+  function summaryHtml(rounds, isF, allNames) {
+    const counts = Array.from({ length: P }, () => [0, 0, 0, 0]);
+    for (const row of rounds) {
+      for (let c = 0; c < 8; c += 4) {
+        const fa = isF[row[c]] + isF[row[c + 1]], fb = isF[row[c + 2]] + isF[row[c + 3]];
+        const t = fa === fb ? fa : 3;
+        for (let i = c; i < c + 4; i++) counts[row[i]][t]++;
+      }
+    }
+    const cols = [0, 1, 2, 3].filter(t => t < 3 || counts.some(c => c[3] > 0));
+    const cell = (n) => `<td${n ? '' : ' class="zero"'}>${n}</td>`;
+    return `<tr><th>이름</th>${cols.map(t => `<th>${TYPE_NAMES[t]}</th>`).join('')}</tr>` +
+      allNames.map((n, i) => `<tr><td>${esc(n)}${isF[i] ? '<span class="f">여</span>' : ''}</td>${cols.map(t => cell(counts[i][t])).join('')}</tr>`).join('');
+  }
 
   let toastTimer;
   function toast(msg) {
