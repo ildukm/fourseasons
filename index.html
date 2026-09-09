@@ -1,0 +1,373 @@
+<title>Four Seasons 복식 대진표</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+  :root {
+    --bg: #f3f4f1;
+    --surface: #ffffff;
+    --surface-2: #e9ebe5;
+    --line: #d3d7cf;
+    --ink: #18201c;
+    --ink-2: #566058;
+    --ink-3: #8a938c;
+    --court1: #1f5fa8;
+    --court1-soft: #e3ecf8;
+    --court2: #2f7a55;
+    --court2-soft: #e1f0e7;
+    --ball: #d6e800;
+    --ball-ink: #2a3000;
+    --rest: #b8bdb4;
+    --focus: #1f5fa8;
+    --shadow: 0 6px 20px rgba(24, 32, 28, .10);
+    --display: "Barlow Condensed", "Arial Narrow", Impact, sans-serif;
+    --body: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10161a;
+      --surface: #182026;
+      --surface-2: #202a31;
+      --line: #2c3840;
+      --ink: #eef1ec;
+      --ink-2: #aab3ab;
+      --ink-3: #74807a;
+      --court1: #6ea3e6;
+      --court1-soft: #1b2d44;
+      --court2: #6cc292;
+      --court2-soft: #17342a;
+      --ball: #d6e800;
+      --ball-ink: #2a3000;
+      --rest: #4a555c;
+      --focus: #6ea3e6;
+      --shadow: 0 6px 20px rgba(0, 0, 0, .4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10161a;
+    --surface: #182026;
+    --surface-2: #202a31;
+    --line: #2c3840;
+    --ink: #eef1ec;
+    --ink-2: #aab3ab;
+    --ink-3: #74807a;
+    --court1: #6ea3e6;
+    --court1-soft: #1b2d44;
+    --court2: #6cc292;
+    --court2-soft: #17342a;
+    --ball: #d6e800;
+    --ball-ink: #2a3000;
+    --rest: #4a555c;
+    --focus: #6ea3e6;
+    --shadow: 0 6px 20px rgba(0, 0, 0, .4);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+  .wrap { max-width: 640px; margin: 0 auto; padding: 20px 16px 56px; display: grid; gap: 22px; }
+
+  /* Header */
+  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  .eyebrow {
+    font-family: var(--display); font-weight: 600; font-size: 14px;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3);
+  }
+  h1 {
+    margin: 2px 0 0; font-family: var(--display); font-weight: 700;
+    font-size: 40px; line-height: 1; letter-spacing: -.01em; text-wrap: balance;
+  }
+  .meta { color: var(--ink-2); font-size: 13px; margin-top: 6px; }
+  .icon-btn {
+    border: 1px solid var(--line); background: var(--surface); border-radius: 10px;
+    padding: 8px 12px; font-size: 13px; font-weight: 500; white-space: nowrap;
+  }
+
+  /* Section labels */
+  .label {
+    font-family: var(--display); font-weight: 600; font-size: 15px;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 8px;
+  }
+
+  /* Player picker */
+  .group { display: grid; gap: 8px; }
+  .group + .group { margin-top: 10px; }
+  .group-name { font-size: 12px; color: var(--ink-2); font-weight: 500; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    border: 1px solid var(--line); background: var(--surface); border-radius: 999px;
+    padding: 8px 14px; font-size: 15px; font-weight: 500; min-height: 40px;
+    transition: transform .08s ease;
+  }
+  .chip:active { transform: scale(.97); }
+  .chip[aria-pressed="true"] {
+    background: var(--ball); color: var(--ball-ink); border-color: var(--ball); font-weight: 700;
+  }
+
+  /* My schedule */
+  .me {
+    background: var(--surface); border-radius: 16px; box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .me-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 14px 16px 10px; border-bottom: 1px solid var(--line);
+  }
+  .me-head strong { font-size: 18px; }
+  .me-head span { font-size: 12px; color: var(--ink-2); }
+  .me-empty { padding: 22px 16px; color: var(--ink-2); text-align: center; }
+  .me-row {
+    display: grid; grid-template-columns: 44px 64px 1fr; align-items: center; gap: 12px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+  }
+  .me-row:last-child { border-bottom: 0; }
+  .me-round { font-family: var(--display); font-weight: 700; font-size: 24px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .me-round small { font-size: 12px; font-weight: 600; letter-spacing: .08em; display: block; line-height: 1; color: var(--ink-3); }
+  .court-tag {
+    font-family: var(--display); font-weight: 700; font-size: 17px; letter-spacing: .04em;
+    padding: 6px 0; text-align: center; border-radius: 8px; color: #fff;
+  }
+  .court-tag.c1 { background: var(--court1); }
+  .court-tag.c2 { background: var(--court2); }
+  .court-tag.rest { background: var(--rest); color: var(--ink); }
+  .me-detail { font-size: 14px; line-height: 1.45; }
+  .me-detail b { font-weight: 700; }
+  .me-detail .dim { color: var(--ink-2); }
+
+  /* Full schedule */
+  .rounds { display: grid; gap: 14px; }
+  .round { background: var(--surface); border-radius: 14px; border: 1px solid var(--line); overflow: hidden; }
+  .round-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 10px 14px; background: var(--surface-2);
+  }
+  .round-head h2 {
+    margin: 0; font-family: var(--display); font-weight: 700; font-size: 22px; letter-spacing: .02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .round-head .resting { font-size: 12px; color: var(--ink-2); }
+  .round-head .resting b { color: var(--ink); font-weight: 500; }
+  .courts { display: grid; grid-template-columns: 1fr 1fr; }
+  .court { padding: 12px 14px 14px; border-right: 1px solid var(--line); }
+  .court:last-child { border-right: 0; }
+  .court-name {
+    font-family: var(--display); font-weight: 700; font-size: 15px; letter-spacing: .1em;
+    text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+  }
+  .court-name::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: currentColor; }
+  .court.c1 .court-name { color: var(--court1); }
+  .court.c2 .court-name { color: var(--court2); }
+  .team { display: grid; gap: 4px; }
+  .vs {
+    font-family: var(--display); font-weight: 600; font-size: 12px; letter-spacing: .16em;
+    color: var(--ink-3); text-align: center; margin: 8px 0; position: relative;
+  }
+  .vs::before, .vs::after {
+    content: ""; position: absolute; top: 50%; width: calc(50% - 18px); height: 1px; background: var(--line);
+  }
+  .vs::before { left: 0; } .vs::after { right: 0; }
+  .p {
+    display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 8px;
+    font-size: 15px; font-weight: 500; line-height: 1.25; min-width: 0;
+  }
+  .p .n { overflow-wrap: anywhere; }
+  .p .r { font-size: 10px; color: var(--ink-3); font-weight: 500; flex: none; letter-spacing: .04em; }
+  .p.hit { background: var(--ball); color: var(--ball-ink); font-weight: 700; }
+  .p.hit .r { color: var(--ball-ink); opacity: .7; }
+  .court.mine.c1 { background: var(--court1-soft); }
+  .court.mine.c2 { background: var(--court2-soft); }
+  .round.resting-me .round-head { box-shadow: inset 4px 0 0 var(--ball); }
+
+  /* Missing-roster notice */
+  .notice {
+    background: var(--court1-soft); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 12px; padding: 12px 14px; font-size: 14px;
+  }
+  .notice a { color: var(--court1); font-weight: 700; }
+
+  footer { color: var(--ink-3); font-size: 12px; text-align: center; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  @media (max-width: 360px) {
+    .courts { grid-template-columns: 1fr; }
+    .court { border-right: 0; border-bottom: 1px solid var(--line); }
+    .court:last-child { border-bottom: 0; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Four Seasons Tennis</div>
+      <h1>복식 대진표</h1>
+      <div class="meta">2코트 · 10명 · 5라운드 · 각 4게임, 휴식 1회</div>
+    </div>
+    <a class="icon-btn" id="setupLink" href="setup.html" style="text-decoration:none">명단 설정</a>
+  </header>
+
+  <div class="notice" id="notice" hidden>명단이 없어 자리표시자로 표시 중입니다. <a href="setup.html" id="noticeLink">설정 페이지</a>에서 명단을 입력하고 링크를 만들어 주세요.</div>
+
+  <section>
+    <p class="label">내 이름 선택</p>
+    <div class="group">
+      <div class="group-name">클럽원</div>
+      <div class="chips" id="chipsM"></div>
+    </div>
+    <div class="group">
+      <div class="group-name">게스트</div>
+      <div class="chips" id="chipsG"></div>
+    </div>
+  </section>
+
+  <section class="me" id="me"></section>
+
+  <section>
+    <p class="label">전체 대진</p>
+    <div class="rounds" id="rounds"></div>
+  </section>
+
+  <footer>팀은 클럽원 1명 + 게스트 1명으로 구성됩니다. 같은 파트너와 두 번 짝을 이루지 않습니다.</footer>
+</div>
+
+<script>
+  // 라운드 r에서는 클럽원 r번, 게스트 r번이 휴식. 팀 = [클럽원, 게스트].
+  // 각 코트: [팀A, 팀B]. 같은 파트너 조합은 5라운드 동안 반복되지 않음.
+  const SCHEDULE = [
+    [[[1,1],[4,2]], [[3,4],[2,3]]],
+    [[[0,3],[2,0]], [[3,2],[4,4]]],
+    [[[1,4],[3,3]], [[4,1],[0,0]]],
+    [[[0,1],[1,2]], [[2,4],[4,0]]],
+    [[[0,2],[3,0]], [[1,3],[2,1]]],
+  ];
+  const COURT_NAMES = ['1코트', '2코트'];
+  const DEFAULT_NAMES = {
+    m: ['권순범', '김일두', '손원식', '정성진', '조진희'],
+    g: ['게스트 1', '게스트 2', '게스트 3', '게스트 4', '게스트 5'],
+  };
+
+  // 명단은 쿼리스트링으로 받음: ?m=클럽원1,클럽원2,...&g=게스트1,게스트2,...
+  const names = loadNames();
+  let me = safeGet('fs-me') || null; // "m2" / "g4"
+
+  function safeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function safeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+  function loadNames() {
+    const q = new URLSearchParams(location.search);
+    const parse = (v) => (v || '').split(',').map(s => s.trim()).filter(Boolean);
+    const m = parse(q.get('m')), g = parse(q.get('g'));
+    if (m.length === 5 && g.length === 5) return { m, g };
+    document.getElementById('notice').hidden = false;
+    return { m: [...DEFAULT_NAMES.m], g: [...DEFAULT_NAMES.g] };
+  }
+
+  const id = (role, i) => role + i;
+  const nameOf = (pid) => names[pid[0]][+pid[1]];
+  const roleLabel = (pid) => pid[0] === 'm' ? '클럽원' : '게스트';
+  const team = ([mi, gi]) => [id('m', mi), id('g', gi)];
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+  function render() {
+    renderChips();
+    renderMe();
+    renderRounds();
+  }
+
+  function renderChips() {
+    for (const role of ['m', 'g']) {
+      const el = document.getElementById(role === 'm' ? 'chipsM' : 'chipsG');
+      el.innerHTML = names[role].map((n, i) => {
+        const pid = id(role, i);
+        return `<button type="button" class="chip" data-pid="${pid}" aria-pressed="${pid === me}">${esc(n)}</button>`;
+      }).join('');
+    }
+  }
+
+  function renderMe() {
+    const el = document.getElementById('me');
+    if (!me) {
+      el.innerHTML = `<div class="me-empty">위에서 내 이름을 누르면 라운드별 코트와 파트너가 여기에 표시됩니다.</div>`;
+      return;
+    }
+    const rows = SCHEDULE.map((courts, r) => {
+      let html = '';
+      courts.forEach((match, c) => {
+        match.forEach((t, side) => {
+          const [a, b] = team(t);
+          if (a !== me && b !== me) return;
+          const partner = a === me ? b : a;
+          const [o1, o2] = team(match[1 - side]);
+          html = `
+            <div class="me-row">
+              <div class="me-round"><small>ROUND</small>${r + 1}</div>
+              <div class="court-tag c${c + 1}">${COURT_NAMES[c]}</div>
+              <div class="me-detail">파트너 <b>${esc(nameOf(partner))}</b><br>
+                <span class="dim">상대</span> ${esc(nameOf(o1))} · ${esc(nameOf(o2))}</div>
+            </div>`;
+        });
+      });
+      if (!html) {
+        html = `
+          <div class="me-row">
+            <div class="me-round"><small>ROUND</small>${r + 1}</div>
+            <div class="court-tag rest">휴식</div>
+            <div class="me-detail dim">이 라운드는 쉬어요. 다음 라운드를 준비하세요.</div>
+          </div>`;
+      }
+      return html;
+    }).join('');
+    el.innerHTML = `
+      <div class="me-head"><strong>${esc(nameOf(me))}</strong><span>${roleLabel(me)} · 4게임 · 휴식 1회</span></div>
+      ${rows}`;
+  }
+
+  function renderRounds() {
+    const el = document.getElementById('rounds');
+    el.innerHTML = SCHEDULE.map((courts, r) => {
+      const resting = [id('m', r), id('g', r)];
+      const restingMe = me && resting.includes(me);
+      const courtsHtml = courts.map((match, c) => {
+        const [tA, tB] = match.map(team);
+        const mine = me && [...tA, ...tB].includes(me);
+        const p = (pid) => `<div class="p${pid === me ? ' hit' : ''}"><span class="n">${esc(nameOf(pid))}</span><span class="r">${roleLabel(pid)}</span></div>`;
+        return `
+          <div class="court c${c + 1}${mine ? ' mine' : ''}">
+            <div class="court-name">${COURT_NAMES[c]}</div>
+            <div class="team">${p(tA[0])}${p(tA[1])}</div>
+            <div class="vs">VS</div>
+            <div class="team">${p(tB[0])}${p(tB[1])}</div>
+          </div>`;
+      }).join('');
+      return `
+        <article class="round${restingMe ? ' resting-me' : ''}">
+          <div class="round-head">
+            <h2>ROUND ${r + 1}</h2>
+            <div class="resting">휴식 <b>${esc(nameOf(resting[0]))}</b> · <b>${esc(nameOf(resting[1]))}</b></div>
+          </div>
+          <div class="courts">${courtsHtml}</div>
+        </article>`;
+    }).join('');
+  }
+
+  // Interactions
+  document.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    const pid = chip.dataset.pid;
+    me = me === pid ? null : pid;
+    if (me) safeSet('fs-me', me); else { try { localStorage.removeItem('fs-me'); } catch (err) {} }
+    render();
+  });
+
+  render();
+</script>
