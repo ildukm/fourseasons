@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Four Seasons 복식 대진표</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap">
@@ -23,7 +28,7 @@
     --body: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   }
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
+    :root {
       --bg: #10161a;
       --surface: #182026;
       --surface-2: #202a31;
@@ -41,24 +46,6 @@
       --focus: #6ea3e6;
       --shadow: 0 6px 20px rgba(0, 0, 0, .4);
     }
-  }
-  :root[data-theme="dark"] {
-    --bg: #10161a;
-    --surface: #182026;
-    --surface-2: #202a31;
-    --line: #2c3840;
-    --ink: #eef1ec;
-    --ink-2: #aab3ab;
-    --ink-3: #74807a;
-    --court1: #6ea3e6;
-    --court1-soft: #1b2d44;
-    --court2: #6cc292;
-    --court2-soft: #17342a;
-    --ball: #d6e800;
-    --ball-ink: #2a3000;
-    --rest: #4a555c;
-    --focus: #6ea3e6;
-    --shadow: 0 6px 20px rgba(0, 0, 0, .4);
   }
 
   * { box-sizing: border-box; }
@@ -203,6 +190,8 @@
     .court:last-child { border-bottom: 0; }
   }
 </style>
+</head>
+<body>
 
 <div class="wrap">
   <header>
@@ -371,3 +360,5 @@
 
   render();
 </script>
+</body>
+</html>

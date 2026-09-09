@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Four Seasons 명단 설정</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap">
@@ -15,23 +20,18 @@
     --ball: #d6e800;
     --ball-ink: #2a3000;
     --focus: #1f5fa8;
+    --error: #b3261e;
     --shadow: 0 6px 20px rgba(24, 32, 28, .10);
     --display: "Barlow Condensed", "Arial Narrow", Impact, sans-serif;
     --body: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   }
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
+    :root {
       --bg: #10161a; --surface: #182026; --surface-2: #202a31; --line: #2c3840;
       --ink: #eef1ec; --ink-2: #aab3ab; --ink-3: #74807a;
-      --court1: #6ea3e6; --court1-soft: #1b2d44; --focus: #6ea3e6;
+      --court1: #6ea3e6; --court1-soft: #1b2d44; --focus: #6ea3e6; --error: #ff8a80;
       --shadow: 0 6px 20px rgba(0, 0, 0, .4);
     }
-  }
-  :root[data-theme="dark"] {
-    --bg: #10161a; --surface: #182026; --surface-2: #202a31; --line: #2c3840;
-    --ink: #eef1ec; --ink-2: #aab3ab; --ink-3: #74807a;
-    --court1: #6ea3e6; --court1-soft: #1b2d44; --focus: #6ea3e6;
-    --shadow: 0 6px 20px rgba(0, 0, 0, .4);
   }
 
   * { box-sizing: border-box; }
@@ -94,8 +94,7 @@
     padding: 10px 14px; font-weight: 500; text-decoration: none; color: var(--ink); flex: 1; text-align: center;
   }
   .btn.primary { background: var(--court1); color: #fff; border-color: var(--court1); }
-  .error { color: #b3261e; font-size: 13px; margin: 0; }
-  :root[data-theme="dark"] .error { color: #ff8a80; }
+  .error { color: var(--error); font-size: 13px; margin: 0; }
 
   .toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
@@ -105,6 +104,8 @@
   .toast.show { opacity: 1; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
+</head>
+<body>
 
 <div class="wrap">
   <header>
@@ -236,3 +237,5 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
   }
 </script>
+</body>
+</html>
