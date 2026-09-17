@@ -14,7 +14,6 @@ function inspect(rounds, isF) {
   const rest = Array(10).fill(0);
   const counts = Array.from({ length: 10 }, () => [0, 0, 0, 0]);
   const games = [0, 0, 0, 0];
-  const partners = Array.from({ length: 10 }, () => new Set());
   assert.equal(rounds.length, 10);
   assert.match(rounds.map(row => row.join('')).join(''), /^\d{100}$/);
   for (const row of rounds) {
@@ -22,11 +21,6 @@ function inspect(rounds, isF) {
     row.forEach(p => assert.ok(Number.isInteger(p) && p >= 0 && p < 10));
     assert.equal(Array.from(row).sort().join(''), '0123456789');
     row.slice(8).forEach(p => rest[p]++);
-    for (let c = 0; c < 8; c += 2) {
-      const a = row[c], b = row[c + 1];
-      assert.ok(!partners[a].has(b), `파트너 반복: 선수 ${a} / ${b}`);
-      partners[a].add(b); partners[b].add(a);
-    }
     for (let c = 0; c < 8; c += 4) {
       const a = isF[row[c]] + isF[row[c + 1]];
       const b = isF[row[c + 2]] + isF[row[c + 3]];
@@ -37,7 +31,9 @@ function inspect(rounds, isF) {
   }
   assert.deepEqual(rest, Array(10).fill(2));
   counts.forEach(c => assert.equal(c.reduce((a, b) => a + b), 8));
-  partners.forEach(p => assert.equal(p.size, 8, '8경기 모두 다른 파트너'));
+  const women = isF.reduce((a, b) => a + b);
+  const maxSameSex = [20, 12, 12, 10, 16, 20, 16, 10, 12, 12, 20][women];
+  assert.equal(games[0] + games[2], maxSameSex, '남복·여복 경기 수 최대화');
   return { games, counts };
 }
 
@@ -49,17 +45,16 @@ function inspectPreferred(rounds, isF) {
     assert.ok(court1 <= court2, '코트 순서는 남복·혼복·여복 순');
   }
   assert.equal(games[3], 0, '양 팀 성별 구성이 다른 경기 없음');
-  assert.ok(games.slice(0, 3).every(n => n > 0), '남복·혼복·여복을 함께 편성');
+  const women = isF.reduce((a, b) => a + b);
+  assert.deepEqual(games, women === 5 ? [10, 0, 10, 0] : women === 4 ? [10, 4, 6, 0] : [6, 4, 10, 0]);
   counts.forEach((c, p) => {
     assert.equal(c[isF[p] ? 0 : 2], 0, '성별에 맞지 않는 동성 복식 참여 없음');
-    const sameSexPartners = isF.filter(f => f === isF[p]).length - 1;
-    assert.ok(c[isF[p] ? 2 : 0] <= sameSexPartners, '동성 파트너 후보 수보다 많은 동성 복식을 강제하지 않는다');
   });
   return { games, counts };
 }
 
 for (const women of [4, 5, 6]) {
-  test(`${10 - women}남·${women}녀: 파트너 반복 없이 성별 구성과 코트 순서를 유지한다`, () => {
+  test(`${10 - women}남·${women}녀: 남복·여복을 최대화하고 코트 순서를 유지한다`, () => {
     for (let seed = 1; seed <= 20; seed++) {
       // 클럽원/게스트에 같은 성별이 몰린 경우도 포함한다.
       const isF = Array.from({ length: 10 }, (_, p) => (p * 3 + seed) % 10 < women ? 1 : 0);
@@ -94,11 +89,11 @@ for (let clubWomen = 0; clubWomen <= 5; clubWomen++) {
   }
 }
 
-test('6남·4녀: 여성은 여복 최대 3회, 모두 8경기에서 서로 다른 파트너와 경기한다', () => {
+test('6남·4녀: 파트너 반복을 허용해 여성마다 여복 6회·혼복 2회를 편성한다', () => {
   const isF = [0, 0, 0, 0, 1, 0, 0, 1, 1, 1];
   for (const seed of [0, 7, 42, 20260917, 0xffffffff]) {
     const { counts } = inspectPreferred(generate(isF, seed), isF);
-    for (const p of [4, 7, 8, 9]) assert.ok(counts[p][2] <= 3);
+    for (const p of [4, 7, 8, 9]) assert.deepEqual(counts[p], [0, 2, 6, 0]);
   }
 });
 
@@ -156,7 +151,7 @@ test('같은 선수·휴식 구성에서는 파트너와 상대를 다양하게 
     context.scheduleCost(varied, Array(10).fill(0), false));
 });
 
-test('혼복 4경기보다 파트너 중복 없는 대진을 우선한다', () => {
+test('파트너 중복 없는 대진보다 남복·여복이 최대인 대진을 우선한다', () => {
   // 혼복을 4경기로 제한해 파트너가 반복되는 예시 대진.
   // 선수 4는 선수 7과 3회, 선수 8과 2회 파트너로 배정된다.
   const repeatedPartnersSchedule = [
@@ -178,10 +173,24 @@ test('혼복 4경기보다 파트너 중복 없는 대진을 우선한다', () =
   });
   assert.equal(player4Partners.filter(p => p === 7).length, 3);
   assert.equal(player4Partners.filter(p => p === 8).length, 2);
-  const uniquePartnersSchedule = generate(isF, 42);
-  const { games } = inspectPreferred(uniquePartnersSchedule, isF);
-  assert.ok(games[1] > 4, '파트너 중복을 없애기 위해 혼복 4경기 제한을 완화한다');
+  // 이전 규칙으로 생성한 파트너 중복 없는 대진을 비교 대상으로 고정한다.
+  const uniquePartnersSchedule = [
+    [3, 6, 1, 5, 8, 2, 0, 4, 7, 9],
+    [0, 6, 3, 2, 4, 8, 7, 9, 5, 1],
+    [6, 8, 9, 3, 5, 4, 1, 7, 0, 2],
+    [1, 3, 0, 5, 6, 9, 2, 7, 4, 8],
+    [6, 1, 2, 0, 8, 7, 9, 4, 5, 3],
+    [9, 2, 8, 5, 4, 1, 7, 3, 0, 6],
+    [0, 1, 5, 6, 3, 8, 2, 4, 9, 7],
+    [2, 6, 5, 3, 0, 7, 9, 1, 8, 4],
+    [5, 2, 3, 0, 4, 7, 9, 8, 1, 6],
+    [6, 4, 9, 0, 8, 1, 7, 5, 2, 3],
+  ];
+  const pairs = uniquePartnersSchedule.flatMap(row =>
+    [0, 2, 4, 6].map(c => [row[c], row[c + 1]].sort().join(',')));
+  assert.equal(new Set(pairs).size, 40);
+  inspectPreferred(repeatedPartnersSchedule, isF);
   const { context } = loadPage('setup.html');
-  assert.ok(context.scheduleCost(uniquePartnersSchedule, isF, true) <
+  assert.ok(context.scheduleCost(uniquePartnersSchedule, isF, true) >
     context.scheduleCost(repeatedPartnersSchedule, isF, true));
 });

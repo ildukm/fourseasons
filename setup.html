@@ -125,7 +125,7 @@
   <header>
     <div class="eyebrow">Four Seasons Tennis</div>
     <h1>명단 설정</h1>
-    <div class="meta">클럽원 5명과 게스트 5명의 이름과 성별을 입력하고 생성을 누르면 대진표 링크가 만들어집니다. 파트너 반복을 최소화하고, 그 안에서 남복·여복을 우선하며 필요한 만큼 혼복을 섞습니다.</div>
+    <div class="meta">클럽원 5명과 게스트 5명의 이름과 성별을 입력하고 생성을 누르면 대진표 링크가 만들어집니다. 남복·여복을 최대한 편성하고, 그 안에서 파트너 반복을 줄입니다. 필요한 경우 혼복을 섞습니다.</div>
   </header>
 
   <form id="form" class="wrap" style="padding:0;gap:18px" novalidate>
@@ -275,12 +275,12 @@
   const R = 10;  // 라운드 수
   const P = 10;  // 인원. 0~4 클럽원, 5~9 게스트
 
-  // 파트너 반복 1회의 페널티가 나머지 유한 페널티 합계 상한보다 크다.
-  const W = { gender: 60, partner: 10000, opp: 1, mix: 3, rest: 10, mixed: 30, balance: 1 };
+  // 남복·여복 1경기 감소의 페널티가 나머지 유한 페널티 합계 상한보다 크다.
+  // 파트너 페널티는 최대 4 × (R - 1)² × 10000 = 3,240,000이다.
+  const W = { gender: 60, partner: 10000, opp: 1, mix: 3, rest: 10, sameSex: 10000000, balance: 1 };
 
   function scheduleCost(rounds, isF, preferSameSex) {
     let cost = 0;
-    let mixedGames = 0;
     const mixed = new Uint8Array(P);
     const partner = new Uint8Array(P * P), opp = new Uint8Array(P * P);
     const lastRest = new Int8Array(P).fill(-9);
@@ -292,9 +292,9 @@
         const fa = isF[a] + isF[b], fb = isF[x] + isF[y];
         // 동성 복식 우선 모드는 균형 잡힌 대진에서 시작하고 그 조건을 유지한다.
         if (preferSameSex && fa !== fb) return Infinity;
+        if (!(fa === 0 && fb === 0) && !(fa === 2 && fb === 2)) cost += W.sameSex;
         cost += W.gender * Math.abs(fa - fb);
         if (fa === 1 && fb === 1) {
-          mixedGames++;
           mixed[a]++; mixed[b]++; mixed[x]++; mixed[y]++;
         }
         partner[key(a, b)]++; partner[key(x, y)]++;
@@ -313,7 +313,6 @@
       cost += W.opp * opp[i] * opp[i];
     }
     if (preferSameSex) {
-      cost += W.mixed * mixedGames;
       for (const n of mixed) cost += W.balance * n * n;
     }
     return cost;
@@ -333,7 +332,7 @@
       rounds.push([...play, ...rest]);
     }
     if (preferSameSex) {
-      // 초기 배정은 혼복 4경기. 최적화 중 파트너 반복을 줄이기 위해 혼복을 늘릴 수 있다.
+      // 남복·여복이 최대인 배정으로 시작한다. 6:4는 혼복 4경기, 5:5는 혼복 없음.
       const majority = men.length >= women.length ? men : women;
       const minority = majority === men ? women : men;
       for (let r = 0; r < R; r++) {
@@ -346,9 +345,7 @@
         const b = minority.filter(p => !rest.includes(p));
         const play = b.length === 2
           ? [a[0], b[0], a[1], b[1], ...a.slice(2)]
-          : majority.length === 5 && r % 5 === 0
-            ? [a[0], b[0], a[1], b[1], a[2], b[2], a[3], b[3]]
-            : [...a, ...b];
+          : [...a, ...b];
         rounds[r] = [...play, ...rest];
       }
     }
