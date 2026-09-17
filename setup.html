@@ -125,7 +125,7 @@
   <header>
     <div class="eyebrow">Four Seasons Tennis</div>
     <h1>명단 설정</h1>
-    <div class="meta">클럽원 5명과 게스트 5명의 이름과 성별을 입력하고 생성을 누르면 대진표 링크가 만들어집니다. 여성 인원에 맞춰 여복·혼복이 편성됩니다.</div>
+    <div class="meta">클럽원 5명과 게스트 5명의 이름과 성별을 입력하고 생성을 누르면 대진표 링크가 만들어집니다. 남녀가 각각 4명 이상이면 남복·여복 위주로 편성하고, 혼복도 조금씩 섞습니다.</div>
   </header>
 
   <form id="form" class="wrap" style="padding:0;gap:18px" novalidate>
@@ -278,8 +278,10 @@
   // 페널티 가중치. 여성 경기는 여복/혼복이어야 한다는 조건이 가장 무겁다.
   const W = { gender: 60, partner: 15, opp: 1, mix: 3, rest: 10 };
 
-  function scheduleCost(rounds, isF) {
+  function scheduleCost(rounds, isF, preferSameSex) {
     let cost = 0;
+    let mixedGames = 0;
+    const mixed = new Uint8Array(P);
     const partner = new Uint8Array(P * P), opp = new Uint8Array(P * P);
     const lastRest = new Int8Array(P).fill(-9);
     const key = (a, b) => a < b ? a * P + b : b * P + a;
@@ -287,7 +289,14 @@
       const row = rounds[r];
       for (let c = 0; c < 8; c += 4) {
         const a = row[c], b = row[c + 1], x = row[c + 2], y = row[c + 3];
-        cost += W.gender * Math.abs(isF[a] + isF[b] - isF[x] - isF[y]);
+        const fa = isF[a] + isF[b], fb = isF[x] + isF[y];
+        // 동성 복식 우선 모드는 균형 잡힌 대진에서 시작하고 그 조건을 유지한다.
+        if (preferSameSex && fa !== fb) return Infinity;
+        cost += W.gender * Math.abs(fa - fb);
+        if (fa === 1 && fb === 1) {
+          mixedGames++;
+          mixed[a]++; mixed[b]++; mixed[x]++; mixed[y]++;
+        }
         partner[key(a, b)]++; partner[key(x, y)]++;
         opp[key(a, x)]++; opp[key(a, y)]++; opp[key(b, x)]++; opp[key(b, y)]++;
         if ((a < 5) === (b < 5)) cost += W.mix;
@@ -303,11 +312,18 @@
       if (partner[i] > 1) cost += W.partner * (partner[i] - 1);
       cost += W.opp * opp[i] * opp[i];
     }
+    if (preferSameSex) {
+      cost += 100 * (mixedGames - 4) ** 2;
+      for (const n of mixed) cost += 10 * n * n;
+    }
     return cost;
   }
 
   // rounds[r]: 길이 10 배열. [0..3] 1코트(0,1 vs 2,3), [4..7] 2코트(4,5 vs 6,7), [8,9] 휴식.
   function buildSchedule(isF) {
+    const men = [], women = [];
+    for (let p = 0; p < P; p++) (isF[p] ? women : men).push(p);
+    const preferSameSex = men.length >= 4 && women.length >= 4;
     const rounds = [];
     for (let r = 0; r < R; r++) {
       const rest = [r % 5, 5 + r % 5];
@@ -316,14 +332,40 @@
       for (let i = play.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [play[i], play[j]] = [play[j], play[i]]; }
       rounds.push([...play, ...rest]);
     }
+    if (preferSameSex) {
+      // 5:5는 혼복 2라운드, 6:4(4:6)는 소수 성별이 쉬는 4라운드에 혼복 1경기씩.
+      const majority = men.length >= women.length ? men : women;
+      const minority = majority === men ? women : men;
+      for (let r = 0; r < R; r++) {
+        const rest = majority.length === 5
+          ? [men[r % 5], women[r % 5]]
+          : r < 6
+            ? [majority[(2 * r) % 6], majority[(2 * r + 1) % 6]]
+            : [minority[(2 * r) % 4], minority[(2 * r + 1) % 4]];
+        const a = majority.filter(p => !rest.includes(p));
+        const b = minority.filter(p => !rest.includes(p));
+        const play = b.length === 2
+          ? [a[0], b[0], a[1], b[1], ...a.slice(2)]
+          : majority.length === 5 && r % 5 === 0
+            ? [a[0], b[0], a[1], b[1], a[2], b[2], a[3], b[3]]
+            : [...a, ...b];
+        rounds[r] = [...play, ...rest];
+      }
+    }
     const swap = (row, i, j) => { const t = row[i]; row[i] = row[j]; row[j] = t; };
-    let cost = scheduleCost(rounds, isF);
+    let cost = scheduleCost(rounds, isF, preferSameSex);
     const ITER = 60000;
     for (let i = 0; i < ITER; i++) {
       const T = 6 * (1 - i / ITER) + 0.05;
       const r = (Math.random() * R) | 0, row = rounds[r];
       let undo;
-      if (Math.random() < 0.8) {
+      const move = Math.random();
+      if (preferSameSex && move < 0.1) {
+        // 경기 종류를 유지하면서 라운드 순서를 바꿔 휴식 간격을 조정한다.
+        const r2 = (Math.random() * R) | 0;
+        swap(rounds, r, r2);
+        undo = () => swap(rounds, r, r2);
+      } else if (move < 0.8) {
         // 같은 라운드 안에서 경기 자리 두 개를 바꾼다
         const a = (Math.random() * 8) | 0, b = (Math.random() * 8) | 0;
         if (a === b) continue;
@@ -339,8 +381,16 @@
         swap(row, ia, jy); swap(row2, ib, jx);
         undo = () => { swap(row, ia, jy); swap(row2, ib, jx); };
       }
-      const c = scheduleCost(rounds, isF);
+      const c = scheduleCost(rounds, isF, preferSameSex);
       if (c <= cost || Math.random() < Math.exp((cost - c) / T)) cost = c; else undo();
+    }
+    if (preferSameSex) {
+      // 코트 순서는 남복·혼복·여복 순으로 고정한다.
+      for (const row of rounds) {
+        if (isF[row[0]] + isF[row[1]] > isF[row[4]] + isF[row[5]]) {
+          for (let i = 0; i < 4; i++) swap(row, i, i + 4);
+        }
+      }
     }
     return rounds;
   }
