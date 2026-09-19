@@ -276,17 +276,26 @@
   const P = 10;  // 인원. 0~4 클럽원, 5~9 게스트
 
   // 남복·여복 1경기 감소의 페널티가 나머지 유한 페널티 합계 상한보다 크다.
-  // 파트너 페널티는 최대 4 × (R - 1)² × 10000 = 3,240,000이다.
-  const W = { gender: 60, partner: 10000, opp: 1, mix: 3, rest: 10, sameSex: 10000000, balance: 1 };
+  // 파트너 페널티는 최대 4 × (R - 1)² × 1000000 = 324,000,000이다.
+  // 연속 반복은 최대 8 × (R - 1)건. 하위 페널티 합은 10000 미만이므로
+  // 남복·여복 최대화 > 전체 파트너 반복 최소화 > 연속 파트너 반복 최소화를 유지한다.
+  const W = { gender: 60, partner: 1000000, consecutive: 10000, opp: 1, mix: 3, rest: 10, sameSex: 1000000000, balance: 1 };
 
   function scheduleCost(rounds, isF, preferSameSex) {
     let cost = 0;
     const mixed = new Uint8Array(P);
     const partner = new Uint8Array(P * P), opp = new Uint8Array(P * P);
     const lastRest = new Int8Array(P).fill(-9);
+    const lastPartner = new Int8Array(P).fill(-1);
     const key = (a, b) => a < b ? a * P + b : b * P + a;
     for (let r = 0; r < R; r++) {
       const row = rounds[r];
+      // 휴식해도 직전 경기의 파트너를 기억한다. 반복은 선수별로 센다.
+      for (let i = 0; i < 8; i++) {
+        const p = row[i], partner = row[i ^ 1];
+        if (lastPartner[p] === partner) cost += W.consecutive;
+        lastPartner[p] = partner;
+      }
       for (let c = 0; c < 8; c += 4) {
         const a = row[c], b = row[c + 1], x = row[c + 2], y = row[c + 3];
         const fa = isF[a] + isF[b], fb = isF[x] + isF[y];
@@ -358,8 +367,8 @@
       const r = (Math.random() * R) | 0, row = rounds[r];
       let undo;
       const move = Math.random();
-      if (preferSameSex && move < 0.1) {
-        // 경기 종류를 유지하면서 라운드 순서를 바꿔 휴식 간격을 조정한다.
+      if (move < 0.1) {
+        // 경기와 전체 파트너 반복을 유지하면서 연속 반복과 휴식 간격을 조정한다.
         const r2 = (Math.random() * R) | 0;
         swap(rounds, r, r2);
         undo = () => swap(rounds, r, r2);

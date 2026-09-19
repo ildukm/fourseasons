@@ -104,6 +104,72 @@ test('같은 난수 시드는 재현 가능하고 다른 시드는 서로 다른
   assert.equal(new Set([1, 2, 3, 4, 5].map(serialize)).size, 5);
 });
 
+function consecutivePartners(rounds) {
+  const last = Array(10).fill(-1);
+  let count = 0;
+  for (const row of rounds) {
+    for (let i = 0; i < 8; i++) {
+      const p = row[i], partner = row[i ^ 1];
+      if (last[p] === partner) count++;
+      last[p] = partner;
+    }
+  }
+  return count;
+}
+
+test('공유 대진의 9·10라운드 연속 파트너보다 반복을 떨어뜨린 순서를 선호한다', () => {
+  const { context } = loadPage('setup.html');
+  const isF = [0, 0, 0, 0, 1, 0, 0, 1, 1, 1];
+  const rounds = '5132978406506371829451204639872603749851015349786265217489306105382947632107548960527948133160874952'
+    .match(/.{10}/g).map(row => [...row].map(Number));
+  const separated = rounds.slice();
+  [separated[7], separated[8]] = [separated[8], separated[7]];
+  inspectPreferred(rounds, isF);
+  inspectPreferred(separated, isF);
+  assert.equal(consecutivePartners(rounds), 2);
+  assert.equal(consecutivePartners(separated), 0);
+  // 경기와 전체 파트너 반복은 같고 휴식 간격은 조금 나빠져도 연속 반복 해소가 우선이다.
+  assert.ok(context.scheduleCost(separated, isF, true) < context.scheduleCost(rounds, isF, true));
+  // 10라운드의 팀을 바꾸면 연속 반복은 없어지지만 전체 반복이 11에서 12로 늘어난다.
+  const moreRepeats = rounds.map(row => row.slice());
+  [moreRepeats[9][0], moreRepeats[9][2]] = [moreRepeats[9][2], moreRepeats[9][0]];
+  inspectPreferred(moreRepeats, isF);
+  assert.equal(consecutivePartners(moreRepeats), 0);
+  assert.ok(context.scheduleCost(rounds, isF, true) < context.scheduleCost(moreRepeats, isF, true));
+});
+
+test('휴식을 사이에 둔 직전 경기의 파트너 반복도 센다', () => {
+  const page = loadPage('setup.html');
+  const rounds = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [8, 9, 2, 4, 3, 6, 5, 7, 0, 1],
+    [0, 1, 2, 5, 3, 7, 4, 6, 8, 9],
+    ...Array.from({ length: 7 }, (_, r) => r % 2
+      ? [0, 3, 1, 6, 2, 7, 4, 5, 8, 9]
+      : [0, 2, 1, 4, 3, 5, 6, 7, 8, 9]),
+  ];
+  assert.equal(consecutivePartners(rounds), 2);
+  const weighted = page.context.scheduleCost(rounds, Array(10).fill(0), false);
+  const weight = page.read('W.consecutive');
+  page.read('W.consecutive = 0');
+  assert.equal(weighted - page.context.scheduleCost(rounds, Array(10).fill(0), false), 2 * weight);
+});
+
+test('6남·4녀 생성은 전체 반복 최소값을 유지하면서 연속 파트너를 피한다', () => {
+  const isF = [0, 0, 0, 0, 1, 0, 0, 1, 1, 1];
+  for (const seed of [0, 7, 42, 20260917, 0xffffffff]) {
+    const rounds = generate(isF, seed);
+    inspectPreferred(rounds, isF);
+    const pairs = new Map();
+    for (const row of rounds) for (let i = 0; i < 8; i += 2) {
+      const key = [row[i], row[i + 1]].sort().join(',');
+      pairs.set(key, (pairs.get(key) || 0) + 1);
+    }
+    assert.equal([...pairs.values()].reduce((sum, n) => sum + (n - 1) ** 2, 0), 11, `seed ${seed}`);
+    assert.equal(consecutivePartners(rounds), 0, `seed ${seed}`);
+  }
+});
+
 // 최적화 선호는 모든 생성 결과의 강제 조건으로 취급하지 않고 비교 점수로 검증한다.
 test('평가 점수는 코트·팀·팀원 표기 순서와 전체 성별 반전에 영향받지 않는다', () => {
   const { context } = loadPage('setup.html');
