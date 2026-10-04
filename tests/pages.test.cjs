@@ -99,6 +99,63 @@ for (const women of [0, 1, 4, 5, 6, 10]) {
   });
 }
 
+for (const absent of [['m2'], ['m0', 'm4']]) {
+  test(`클럽원 결석 ${absent.join(',')}: 생성 링크와 대진표에서 결석자를 뺀다`, () => {
+    const isF = [0, 0, 0, 0, 1, 0, 0, 1, 1, 1];
+    const form = formValues(isF);
+    for (const id of absent) form[`x${id}`] = 'on';
+    const setup = loadPage('setup.html', { seed: 7, form });
+    setup.context.build();
+    assert.equal(setup.element('error').hidden, true);
+    const url = new URL(setup.element('url').textContent);
+    const n = 10 - absent.length;
+    assert.equal(url.searchParams.get('x'), absent.join(','));
+    assert.equal(url.searchParams.get('m'), members.join(','));
+    // 결석한 여성 클럽원(m4)은 w에서 빠진다.
+    assert.equal(url.searchParams.get('w'), absent.includes('m4') ? 'g2,g3,g4' : 'm4,g2,g3,g4');
+    assert.match(url.searchParams.get('s'), new RegExp(`^\\d{${10 * n}}$`));
+    const summary = summaryRows(setup.element('summary').innerHTML);
+    const present = [...members, ...guests].filter((_, p) => !absent.includes(pid(p)));
+    assert.deepEqual(summary.map(row => row.name.replace(/<.*/, '')), present);
+    assert.equal(JSON.parse(setup.context.localStorage.getItem('fs-setup')).x.join(','), absent.join(','));
+
+    const page = loadPage('index.html', { url: url.href });
+    assert.equal(page.element('notice').hidden, true);
+    const loaded = plain(page.read('SCHEDULE'));
+    loaded.forEach(round => {
+      const ids = [...round.courts.flatMap(c => c.teams.flat()), ...round.rest];
+      assert.equal(ids.length, n);
+      assert.equal(round.rest.length, n - 8);
+      absent.forEach(id => assert.equal(ids.includes(id), false));
+    });
+    const chips = page.element('chipsM').innerHTML;
+    absent.forEach(id => assert.equal(chips.includes(`data-pid="${id}"`), false));
+    const meta = page.element('meta').innerHTML;
+    assert.match(meta, n === 9 ? /9명 · 10라운드 · 각 8~9게임, 휴식 1~2회/ : /8명 · 10라운드 · 각 10게임, 휴식 없음/);
+    assert.match(meta, new RegExp(`결석 ${absent.map(id => members[+id[1]]).join(', ')}`));
+    if (n === 8) assert.match(page.element('rounds').innerHTML, /휴식 없음/);
+  });
+}
+
+test('결석한 클럽원이 본인으로 저장되어 있으면 선택하지 않은 상태로 연다', () => {
+  const url = link({ x: 'm2', s: '013456789'.repeat(10) });
+  const absent = loadPage('index.html', { url, stored: { 'fs-me': 'm2' } });
+  assert.equal(absent.element('notice').hidden, true);
+  assert.equal(absent.read('me'), null);
+  const present = loadPage('index.html', { url, stored: { 'fs-me': 'm3' } });
+  assert.equal(present.read('me'), 'm3');
+  assert.match(present.element('me').innerHTML, /정선진.*클럽원 · 10게임 · 휴식 없음/s);
+});
+
+test('설정 입력 검증: 결석 3명', () => {
+  const form = { ...formValues(), xm0: 'on', xm1: 'on', xm2: 'on' };
+  const page = loadPage('setup.html', { form });
+  page.context.buildSchedule = () => assert.fail('잘못된 입력으로 대진을 생성하면 안 된다');
+  page.context.build();
+  assert.equal(page.element('error').hidden, false);
+  assert.match(page.element('error').textContent, /최대 2명/);
+});
+
 const invalidLinks = [
   ['대진 누락', { s: null }], ['빈 대진', { s: '' }],
   ['99자리', { s: validSchedule.slice(1) }], ['101자리', { s: validSchedule + '0' }],
@@ -114,6 +171,11 @@ const invalidLinks = [
   ['게스트 6명', { g: [...guests, '추가'].join(',') }],
   ['빈 이름', { m: '권순범,김일두, ,정선진,조진희' }],
   ['명단 누락', { m: null, g: null }],
+  ['결석 표시 없이 90자리', { s: '123456789'.repeat(10) }],
+  ['결석자가 대진에 포함', { x: 'm0', s: '012345678'.repeat(10) }],
+  ['결석 1명에 100자리', { x: 'm0' }],
+  ['결석 3명', { x: 'm0,m1,m2', s: '3456789'.repeat(10) }],
+  ['게스트 결석', { x: 'g0', s: '012346789'.repeat(10) }],
 ];
 for (const [name, params] of invalidLinks) {
   test(`잘못된 링크는 안내와 기본 명단·대진을 표시: ${name}`, () => {

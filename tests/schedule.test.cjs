@@ -260,3 +260,40 @@ test('파트너 중복 없는 대진보다 남복·여복이 최대인 대진을
   assert.ok(context.scheduleCost(uniquePartnersSchedule, isF, true) >
     context.scheduleCost(repeatedPartnersSchedule, isF, true));
 });
+
+// 클럽원 결석: 9명이면 라운드당 1명, 8명이면 아무도 쉬지 않는다. 여성 수별 남복·여복 최대 경기 수.
+const absentMaxSameSex = { 9: [20, 12, 10, 10, 16, 16, 10, 10, 12, 20], 8: [20, 10, 10, 10, 20, 10, 10, 10, 20] };
+for (const absent of [[2], [0, 4]]) {
+  const players = Array.from({ length: 10 }, (_, p) => p).filter(p => !absent.includes(p));
+  const n = players.length;
+  test(`클럽원 ${absent.length}명 결석(${n}명): 결석자를 빼고 휴식을 고르게 나누며 남복·여복을 최대화한다`, () => {
+    for (let women = 0; women <= n; women++) {
+      for (const seed of [1, 2, 3]) {
+        const isF = Array(10).fill(0);
+        // 9명은 2칸, 8명은 3칸 간격으로 배치해 클럽원·게스트에 여성이 섞이게 한다.
+        players.forEach((p, i) => { if ((i * (n === 9 ? 2 : 3) + seed) % n < women) isF[p] = 1; });
+        const { context } = loadPage('setup.html', { seed });
+        const rounds = context.buildSchedule(isF, players);
+        const rest = Array(10).fill(0);
+        let sameSex = 0;
+        assert.equal(rounds.length, 10);
+        for (const row of rounds) {
+          assert.deepEqual(Array.from(row).sort(), players, `여성 ${women}, seed ${seed}`);
+          row.slice(8).forEach(p => rest[p]++);
+          for (let c = 0; c < 8; c += 4) {
+            const a = isF[row[c]] + isF[row[c + 1]], b = isF[row[c + 2]] + isF[row[c + 3]];
+            if ((a === 0 && b === 0) || (a === 2 && b === 2)) sameSex++;
+          }
+          if (women >= 4 && n - women >= 4) {
+            const courtWomen = c => row.slice(c, c + 4).reduce((sum, p) => sum + isF[p], 0);
+            assert.ok(courtWomen(0) <= courtWomen(4), '코트 순서는 남복·혼복·여복 순');
+          }
+        }
+        const counts = players.map(p => rest[p]);
+        assert.ok(Math.max(...counts) - Math.min(...counts) <= 1, '휴식 횟수 차이는 1 이하');
+        assert.equal(counts.reduce((a, b) => a + b), 10 * (n - 8));
+        assert.equal(sameSex, absentMaxSameSex[n][women], `여성 ${women}, seed ${seed}`);
+      }
+    }
+  });
+}

@@ -206,7 +206,7 @@
     <div>
       <div class="eyebrow">Four Seasons Tennis</div>
       <h1>복식 대진표</h1>
-      <div class="meta">2코트 · 10명 · 10라운드 · 각 8게임, 휴식 2회</div>
+      <div class="meta" id="meta">2코트 · 10명 · 10라운드 · 각 8게임, 휴식 2회</div>
     </div>
     <a class="icon-btn" id="setupLink" href="setup.html" style="text-decoration:none">명단 설정</a>
   </header>
@@ -246,14 +246,19 @@
     m: ['권순범', '김일두', '손원식', '정선진', '조진희'],
     g: ['게스트 1', '게스트 2', '게스트 3', '게스트 4', '게스트 5'],
     w: ['m4'],
+    x: [],
     s: '1839560742824173095647925368100491573682347806129598260354716958170243273105486964237915080825941637',
   };
 
-  // 쿼리스트링: ?m=클럽원1,...&g=게스트1,...&w=여성id,...&s=대진
+  // 쿼리스트링: ?m=클럽원1,...&g=게스트1,...&w=여성id,...&x=결석id,...&s=대진
   //  w: 여성인 사람의 id (예 m4,g1). 없으면 전원 남
-  //  s: 라운드당 10자리(1코트 4명, 2코트 4명, 휴식 2명. 0~4 클럽원, 5~9 게스트) x 10라운드 = 100자리
+  //  x: 결석한 클럽원 id (예 m2). 최대 2명. 결석자도 m에는 이름이 남아 있다
+  //  s: 라운드당 참가 인원 수만큼(1코트 4명, 2코트 4명, 나머지 휴식. 0~4 클럽원, 5~9 게스트) x 10라운드
+  //     10명이면 100자리, 9명이면 90자리, 8명이면 80자리
   const names = loadNames();
+  const PLAYERS = Array.from({ length: 10 }, (_, i) => idxToPid(i)).filter(pid => !names.x.includes(pid));
   let me = safeGet('fs-me') || null; // "m2" / "g4"
+  if (!PLAYERS.includes(me)) me = null; // 결석했거나 잘못된 값이면 선택하지 않은 상태로 시작
 
   function safeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function safeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
@@ -263,15 +268,19 @@
     const parse = (v) => (v || '').split(',').map(s => s.trim()).filter(Boolean);
     const m = parse(q.get('m')), g = parse(q.get('g'));
     const w = parse(q.get('w')).filter(s => /^[mg][0-4]$/.test(s));
+    const x = [...new Set(parse(q.get('x')).filter(s => /^m[0-4]$/.test(s)))];
     const s = q.get('s') || '';
-    if (m.length === 5 && g.length === 5 && isValidSchedule(s)) return { m, g, w, s };
+    const present = Array.from({ length: 10 }, (_, i) => i).filter(i => !x.includes(idxToPid(i)));
+    if (m.length === 5 && g.length === 5 && isValidSchedule(s, present)) return { m, g, w, x, s };
     document.getElementById('notice').hidden = false;
     return { ...DEFAULT_NAMES };
   }
 
-  function isValidSchedule(s) {
-    if (!/^[0-9]{100}$/.test(s)) return false;
-    for (let r = 0; r < R; r++) if (new Set(s.slice(r * 10, r * 10 + 10)).size !== 10) return false;
+  // 라운드마다 참가자(present) 전원이 한 번씩 나와야 한다. 2코트를 채우려면 8명 이상 필요하다.
+  function isValidSchedule(s, present = Array.from({ length: 10 }, (_, i) => i)) {
+    const n = present.length, want = present.join('');
+    if (n < 8 || !new RegExp(`^[0-9]{${R * n}}$`).test(s)) return false;
+    for (let r = 0; r < R; r++) if ([...s.slice(r * n, r * n + n)].sort().join('') !== want) return false;
     return true;
   }
 
@@ -287,22 +296,36 @@
     return fa === fb ? TYPE_NAMES[fa] : null;
   }
 
-  // SCHEDULE[r] = { courts: [{ teams: [[pid, pid], [pid, pid]], type }, ...], rest: [pid, pid] }
+  // SCHEDULE[r] = { courts: [{ teams: [[pid, pid], [pid, pid]], type }, ...], rest: [pid, ...] }
+  // rest는 10명이면 2명, 9명이면 1명, 8명이면 빈 배열
   const SCHEDULE = Array.from({ length: R }, (_, r) => {
-    const row = [...names.s.slice(r * 10, r * 10 + 10)].map(d => idxToPid(+d));
+    const n = PLAYERS.length;
+    const row = [...names.s.slice(r * n, r * n + n)].map(d => idxToPid(+d));
     const courts = [0, 4].map(c => {
       const teams = [[row[c], row[c + 1]], [row[c + 2], row[c + 3]]];
       return { teams, type: matchType(...teams) };
     });
-    return { courts, rest: [row[8], row[9]] };
+    return { courts, rest: row.slice(8) };
   });
+  const restCount = (pid) => SCHEDULE.filter(({ rest }) => rest.includes(pid)).length;
 
   function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
   function render() {
+    renderMeta();
     renderChips();
     renderMe();
     renderRounds();
+  }
+
+  function renderMeta() {
+    const rests = [...new Set(PLAYERS.map(restCount))].sort();
+    const range = (a) => a.length > 1 ? `${a[0]}~${a[a.length - 1]}` : `${a[0]}`;
+    const restText = rests[rests.length - 1] ? `휴식 ${range(rests)}회` : '휴식 없음';
+    const absent = names.x.map(pid => esc(nameOf(pid))).join(', ');
+    document.getElementById('meta').innerHTML =
+      `2코트 · ${PLAYERS.length}명 · ${R}라운드 · 각 ${range(rests.map(n => R - n).reverse())}게임, ${restText}` +
+      (absent ? ` · 결석 ${absent}` : '');
   }
 
   function renderChips() {
@@ -310,6 +333,7 @@
       const el = document.getElementById(role === 'm' ? 'chipsM' : 'chipsG');
       el.innerHTML = names[role].map((n, i) => {
         const pid = id(role, i);
+        if (!PLAYERS.includes(pid)) return '';
         return `<button type="button" class="chip" data-pid="${pid}" aria-pressed="${pid === me}">${esc(n)}${fBadge(pid)}</button>`;
       }).join('');
     }
@@ -349,7 +373,7 @@
       return html;
     }).join('');
     el.innerHTML = `
-      <div class="me-head"><strong>${esc(nameOf(me))}</strong><span>${roleLabel(me)} · 8게임 · 휴식 2회</span></div>
+      <div class="me-head"><strong>${esc(nameOf(me))}</strong><span>${roleLabel(me)} · ${R - restCount(me)}게임 · ${restCount(me) ? `휴식 ${restCount(me)}회` : '휴식 없음'}</span></div>
       ${rows}`;
   }
 
@@ -373,7 +397,7 @@
         <article class="round${restingMe ? ' resting-me' : ''}">
           <div class="round-head">
             <h2>ROUND ${r + 1}</h2>
-            <div class="resting">휴식 <b>${esc(nameOf(rest[0]))}</b> · <b>${esc(nameOf(rest[1]))}</b></div>
+            <div class="resting">${rest.length ? `휴식 ${rest.map(pid => `<b>${esc(nameOf(pid))}</b>`).join(' · ')}` : '휴식 없음'}</div>
           </div>
           <div class="courts">${courtsHtml}</div>
         </article>`;

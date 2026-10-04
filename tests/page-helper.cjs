@@ -3,7 +3,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 // HTML 안의 실제 스크립트를 실행한다. DOM은 이 테스트에서 사용하는 입출력만 제공한다.
-function loadPage(file, { seed = 1, url = `https://example.test/${file}`, form = {} } = {}) {
+function loadPage(file, { seed = 1, url = `https://example.test/${file}`, form = {}, stored = {} } = {}) {
   const elements = new Map();
   function element(id) {
     if (!elements.has(id)) {
@@ -16,7 +16,7 @@ function loadPage(file, { seed = 1, url = `https://example.test/${file}`, form =
     }
     return elements.get(id);
   }
-  const storage = new Map();
+  const storage = new Map(Object.entries(stored));
   const math = Object.create(Math);
   math.random = () => {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;

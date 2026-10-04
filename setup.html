@@ -78,6 +78,13 @@
   .sex span { display: block; padding: 10px 12px; font-size: 14px; color: var(--ink-2); }
   .sex input:checked + span { background: var(--ink); color: var(--bg); font-weight: 500; }
   .sex input:focus-visible + span { outline: 3px solid var(--focus); outline-offset: -3px; }
+  .field.member { grid-template-columns: 28px minmax(0, 1fr) auto auto; }
+  .absent { position: relative; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .absent input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+  .absent span { display: block; padding: 10px 12px; font-size: 14px; color: var(--ink-2); }
+  .absent input:checked + span { background: var(--ink); color: var(--bg); font-weight: 500; }
+  .absent input:focus-visible + span { outline: 3px solid var(--focus); outline-offset: -3px; }
+  .field:has(.absent input:checked) :is(input[type="text"], .sex) { opacity: .4; }
 
   .build {
     width: 100%; border: 0; border-radius: 12px; padding: 14px;
@@ -125,14 +132,14 @@
   <header>
     <div class="eyebrow">Four Seasons Tennis</div>
     <h1>명단 설정</h1>
-    <div class="meta">클럽원 5명과 게스트 5명의 이름과 성별을 입력하고 생성을 누르면 대진표 링크가 만들어집니다. 남복·여복을 최대한 편성하고, 그 안에서 파트너 반복을 줄입니다. 필요한 경우 혼복을 섞습니다.</div>
+    <div class="meta">클럽원 5명과 게스트 5명의 이름과 성별을 입력하고 생성을 누르면 대진표 링크가 만들어집니다. 못 나오는 클럽원은 결석을 누르세요. 남복·여복을 최대한 편성하고, 그 안에서 파트너 반복을 줄입니다. 필요한 경우 혼복을 섞습니다.</div>
   </header>
 
   <form id="form" class="wrap" style="padding:0;gap:18px" novalidate>
     <section>
       <p class="label">클럽원</p>
       <div class="card fields" id="members"></div>
-      <p class="hint">기본 클럽원 명단이 채워져 있습니다. 못 나오는 분이 있으면 그 칸을 다른 이름으로 바꾸세요. 수정한 명단은 이 기기에 기억됩니다.</p>
+      <p class="hint">기본 클럽원 명단이 채워져 있습니다. 결석은 최대 2명까지 누를 수 있고, 9명이면 라운드마다 1명, 8명이면 아무도 쉬지 않습니다. 수정한 명단은 이 기기에 기억됩니다.</p>
     </section>
 
     <section>
@@ -176,17 +183,18 @@
   let saved = {};
   try { saved = JSON.parse(safeGet(STORE)) || {}; } catch (e) {}
 
-  function fieldsHtml(prefix, values, women, ph) {
+  function fieldsHtml(prefix, values, women, ph, absent) {
     return Array.from({ length: N }, (_, i) => {
       const f = women.includes(prefix + i);
       return `
-      <div class="field">
+      <div class="field${absent ? ' member' : ''}">
         <span class="no">${i + 1}</span>
         <input type="text" name="${prefix}${i}" value="${esc(values[i] || '')}" placeholder="${ph} ${i + 1}" maxlength="12" autocomplete="off" aria-label="${ph} ${i + 1}">
         <div class="sex" role="radiogroup" aria-label="${ph} ${i + 1} 성별">
           <label><input type="radio" name="s${prefix}${i}" value="m"${f ? '' : ' checked'}><span>남</span></label>
           <label><input type="radio" name="s${prefix}${i}" value="f"${f ? ' checked' : ''}><span>여</span></label>
-        </div>
+        </div>${absent ? `
+        <label class="absent"><input type="checkbox" name="x${prefix}${i}" aria-label="${ph} ${i + 1} 결석"${absent.includes(prefix + i) ? ' checked' : ''}><span>결석</span></label>` : ''}
       </div>`;
     }).join('');
   }
@@ -194,7 +202,7 @@
 
   const defaultWomen = CLUB_MEMBERS.map((n, i) => CLUB_WOMEN.includes(n) ? 'm' + i : '').filter(Boolean);
   const women = saved.w || defaultWomen;
-  document.getElementById('members').innerHTML = fieldsHtml('m', saved.m || CLUB_MEMBERS, women, '클럽원');
+  document.getElementById('members').innerHTML = fieldsHtml('m', saved.m || CLUB_MEMBERS, women, '클럽원', saved.x || []);
   document.getElementById('guests').innerHTML = fieldsHtml('g', saved.g || [], women, '게스트');
   document.getElementById('base').value = saved.base || new URL('index.html', location.href).href;
 
@@ -206,6 +214,10 @@
     const fd = new FormData(document.getElementById('form'));
     return ['m', 'g'].flatMap(prefix => Array.from({ length: N }, (_, i) => prefix + i).filter(pid => fd.get('s' + pid) === 'f'));
   }
+  function readAbsent() {
+    const fd = new FormData(document.getElementById('form'));
+    return Array.from({ length: N }, (_, i) => 'm' + i).filter(pid => fd.get('x' + pid));
+  }
 
   document.getElementById('form').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -216,7 +228,7 @@
   });
 
   function build() {
-    const m = readList('m'), g = readList('g'), w = readWomen();
+    const m = readList('m'), g = readList('g'), w = readWomen(), x = readAbsent();
     const base = document.getElementById('base').value.trim();
     const err = document.getElementById('error');
 
@@ -234,9 +246,14 @@
       err.hidden = false;
       return;
     }
+    if (x.length > 2) {
+      err.textContent = '2코트를 채우려면 8명이 필요해서 결석은 최대 2명까지 가능합니다.';
+      err.hidden = false;
+      return;
+    }
     err.hidden = true;
 
-    safeSet(STORE, JSON.stringify({ m, g, w, base }));
+    safeSet(STORE, JSON.stringify({ m, g, w, x, base }));
 
     let url;
     try {
@@ -248,12 +265,16 @@
     }
     url.searchParams.set('m', m.join(','));
     url.searchParams.set('g', g.join(','));
-    if (w.length) url.searchParams.set('w', w.join(',')); else url.searchParams.delete('w');
-    const isF = Array.from({ length: P }, (_, i) => w.includes(i < 5 ? 'm' + i : 'g' + (i - 5)) ? 1 : 0);
-    const rounds = buildSchedule(isF);
+    const present = w.filter(pid => !x.includes(pid));
+    if (present.length) url.searchParams.set('w', present.join(',')); else url.searchParams.delete('w');
+    if (x.length) url.searchParams.set('x', x.join(',')); else url.searchParams.delete('x');
+    const pidOf = (i) => i < 5 ? 'm' + i : 'g' + (i - 5);
+    const isF = Array.from({ length: P }, (_, i) => w.includes(pidOf(i)) ? 1 : 0);
+    const players = Array.from({ length: P }, (_, i) => i).filter(i => !x.includes(pidOf(i)));
+    const rounds = buildSchedule(isF, players);
     url.searchParams.set('s', rounds.map(row => row.join('')).join(''));
     const link = url.href;
-    document.getElementById('summary').innerHTML = summaryHtml(rounds, isF, [...m, ...g]);
+    document.getElementById('summary').innerHTML = summaryHtml(rounds, isF, [...m, ...g], players);
 
     document.getElementById('url').textContent = link;
     document.getElementById('open').href = link;
@@ -311,8 +332,8 @@
         if ((a < 5) === (b < 5)) cost += W.mix;
         if ((x < 5) === (y < 5)) cost += W.mix;
       }
-      for (const p of [row[8], row[9]]) {
-        const gap = r - lastRest[p];
+      for (let i = 8; i < row.length; i++) {
+        const p = row[i], gap = r - lastRest[p];
         if (gap < 3) cost += W.rest * (3 - gap);
         lastRest[p] = r;
       }
@@ -327,19 +348,25 @@
     return cost;
   }
 
-  // rounds[r]: 길이 10 배열. [0..3] 1코트(0,1 vs 2,3), [4..7] 2코트(4,5 vs 6,7), [8,9] 휴식.
-  function buildSchedule(isF) {
-    const men = [], women = [];
-    for (let p = 0; p < P; p++) (isF[p] ? women : men).push(p);
-    const preferSameSex = men.length >= 4 && women.length >= 4;
+  // rounds[r]: 참가 인원 길이의 배열. [0..3] 1코트(0,1 vs 2,3), [4..7] 2코트(4,5 vs 6,7), [8..] 휴식.
+  // players: 참가자 인덱스. 클럽원 결석 시 8~9명이며 9명이면 라운드당 1명, 8명이면 아무도 쉬지 않는다.
+  function buildSchedule(isF, players = Array.from({ length: P }, (_, p) => p)) {
+    const n = players.length, restPerRound = n - 8;
+    const men = players.filter(p => !isF[p]), women = players.filter(p => isF[p]);
+    const balanced = men.length >= 4 && women.length >= 4;
+    const preferSameSex = balanced && n === P;
+    const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    // 휴식은 무작위 순서로 돌아가며 배정한다. 9명이면 한 명만 2회 쉰다.
+    const restOrder = shuffle(players.slice());
     const rounds = [];
     for (let r = 0; r < R; r++) {
-      const rest = [r % 5, 5 + r % 5];
-      const play = [];
-      for (let p = 0; p < P; p++) if (p !== rest[0] && p !== rest[1]) play.push(p);
-      for (let i = play.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [play[i], play[j]] = [play[j], play[i]]; }
+      const rest = Array.from({ length: restPerRound }, (_, j) => restOrder[(r * restPerRound + j) % n]);
+      const play = shuffle(players.filter(p => !rest.includes(p)));
       rounds.push([...play, ...rest]);
     }
+    // 휴식 횟수가 나누어떨어지지 않으면 누가 한 번 더 쉴지도 탐색한다.
+    const unevenRest = (R * restPerRound) % n !== 0;
+    const restCount = (p) => rounds.reduce((c, row) => c + (row.indexOf(p) >= 8), 0);
     if (preferSameSex) {
       // 남복·여복이 최대인 배정으로 시작한다. 6:4는 혼복 4경기, 5:5는 혼복 없음.
       const majority = men.length >= women.length ? men : women;
@@ -372,7 +399,7 @@
         const r2 = (Math.random() * R) | 0;
         swap(rounds, r, r2);
         undo = () => swap(rounds, r, r2);
-      } else if (preferSameSex && move < 0.2) {
+      } else if (balanced && move < 0.2) {
         // 4남·4녀가 뛰는 라운드는 남복+여복과 혼복 2경기를 서로 바꿀 수 있다.
         // 한 자리만 바꾸면 성별 불균형으로 거부되므로 두 코트를 함께 재편성한다.
         const men = row.slice(0, 8).filter(p => !isF[p]);
@@ -390,11 +417,17 @@
         if (a === b) continue;
         swap(row, a, b);
         undo = () => swap(row, a, b);
+      } else if (unevenRest && move < 0.85) {
+        // 한 번 더 쉬는 사람을 바꾼다. 휴식 횟수 차이는 1을 넘지 않는다.
+        const a = 8 + ((Math.random() * restPerRound) | 0), b = (Math.random() * 8) | 0;
+        if (restCount(row[a]) <= restCount(row[b])) continue;
+        swap(row, a, b);
+        undo = () => swap(row, a, b);
       } else {
-        // 두 라운드의 휴식자를 맞바꾼다 (휴식 횟수는 그대로 2회씩 유지)
+        // 두 라운드의 휴식자를 맞바꾼다 (사람별 휴식 횟수는 유지)
         const r2 = (Math.random() * R) | 0, row2 = rounds[r2];
-        if (r2 === r) continue;
-        const ia = 8 + ((Math.random() * 2) | 0), ib = 8 + ((Math.random() * 2) | 0);
+        if (r2 === r || !restPerRound) continue;
+        const ia = 8 + ((Math.random() * restPerRound) | 0), ib = 8 + ((Math.random() * restPerRound) | 0);
         const jy = row.indexOf(row2[ib]), jx = row2.indexOf(row[ia]);
         if (jy >= 8 || jx >= 8) continue;
         swap(row, ia, jy); swap(row2, ib, jx);
@@ -407,10 +440,11 @@
         best = rounds.map(row => row.slice());
       }
     }
-    if (preferSameSex) {
-      // 코트 순서는 남복·혼복·여복 순으로 고정한다.
+    if (balanced) {
+      // 코트 순서는 남복·혼복·여복 순으로 고정한다. 점수는 코트 순서와 무관하다.
+      const courtWomen = (row, c) => isF[row[c]] + isF[row[c + 1]] + isF[row[c + 2]] + isF[row[c + 3]];
       for (const row of best) {
-        if (isF[row[0]] + isF[row[1]] > isF[row[4]] + isF[row[5]]) {
+        if (courtWomen(row, 0) > courtWomen(row, 4)) {
           for (let i = 0; i < 4; i++) swap(row, i, i + 4);
         }
       }
@@ -418,9 +452,9 @@
     return best;
   }
 
-  // 인원별 남복/혼복/여복 횟수 표. 양 팀 여성 수가 다른 경기는 "기타"로 센다.
+  // 인원별 남복/혼복/여복 횟수 표. 양 팀 여성 수가 다른 경기는 "기타"로 센다. 결석자는 표시하지 않는다.
   const TYPE_NAMES = ['남복', '혼복', '여복', '기타'];
-  function summaryHtml(rounds, isF, allNames) {
+  function summaryHtml(rounds, isF, allNames, players = allNames.map((_, i) => i)) {
     const counts = Array.from({ length: P }, () => [0, 0, 0, 0]);
     for (const row of rounds) {
       for (let c = 0; c < 8; c += 4) {
@@ -432,7 +466,7 @@
     const cols = [0, 1, 2, 3].filter(t => t < 3 || counts.some(c => c[3] > 0));
     const cell = (n) => `<td${n ? '' : ' class="zero"'}>${n}</td>`;
     return `<tr><th>이름</th>${cols.map(t => `<th>${TYPE_NAMES[t]}</th>`).join('')}</tr>` +
-      allNames.map((n, i) => `<tr><td>${esc(n)}${isF[i] ? '<span class="f">여</span>' : ''}</td>${cols.map(t => cell(counts[i][t])).join('')}</tr>`).join('');
+      players.map(i => `<tr><td>${esc(allNames[i])}${isF[i] ? '<span class="f">여</span>' : ''}</td>${cols.map(t => cell(counts[i][t])).join('')}</tr>`).join('');
   }
 
   let toastTimer;
