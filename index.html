@@ -251,12 +251,13 @@
   };
 
   // 쿼리스트링: ?m=클럽원1,...&g=게스트1,...&w=여성id,...&x=결석id,...&s=대진
+  //  m: 클럽원 5명. g: 게스트 0명 이상
   //  w: 여성인 사람의 id (예 m4,g1). 없으면 전원 남
-  //  x: 결석한 클럽원 id (예 m2). 최대 2명. 결석자도 m에는 이름이 남아 있다
-  //  s: 라운드당 참가 인원 수만큼(1코트 4명, 2코트 4명, 나머지 휴식. 0~4 클럽원, 5~9 게스트) x 10라운드
-  //     10명이면 100자리, 9명이면 90자리, 8명이면 80자리
+  //  x: 결석한 클럽원 id (예 m2). 결석자도 m에는 이름이 남아 있다
+  //  s: 라운드당 참가 인원 수만큼(1코트 4명, 2코트 4명, 나머지 휴식) x 10라운드. 참가자는 8명 이상
+  //     선수 인덱스(0~4 클럽원, 5~ 게스트)를 36진수 한 글자(0~9, a~z)로 쓴다. 10명이면 100자리
   const names = loadNames();
-  const PLAYERS = Array.from({ length: 10 }, (_, i) => idxToPid(i)).filter(pid => !names.x.includes(pid));
+  const PLAYERS = Array.from({ length: 5 + names.g.length }, (_, i) => idxToPid(i)).filter(pid => !names.x.includes(pid));
   let me = safeGet('fs-me') || null; // "m2" / "g4"
   if (!PLAYERS.includes(me)) me = null; // 결석했거나 잘못된 값이면 선택하지 않은 상태로 시작
 
@@ -267,25 +268,26 @@
     const q = new URLSearchParams(location.search);
     const parse = (v) => (v || '').split(',').map(s => s.trim()).filter(Boolean);
     const m = parse(q.get('m')), g = parse(q.get('g'));
-    const w = parse(q.get('w')).filter(s => /^[mg][0-4]$/.test(s));
+    const ids = Array.from({ length: 5 + g.length }, (_, i) => idxToPid(i));
+    const w = parse(q.get('w')).filter(s => ids.includes(s));
     const x = [...new Set(parse(q.get('x')).filter(s => /^m[0-4]$/.test(s)))];
     const s = q.get('s') || '';
-    const present = Array.from({ length: 10 }, (_, i) => i).filter(i => !x.includes(idxToPid(i)));
-    if (m.length === 5 && g.length === 5 && isValidSchedule(s, present)) return { m, g, w, x, s };
+    const present = ids.map((_, i) => i).filter(i => !x.includes(idxToPid(i)));
+    if (m.length === 5 && isValidSchedule(s, present)) return { m, g, w, x, s };
     document.getElementById('notice').hidden = false;
     return { ...DEFAULT_NAMES };
   }
 
   // 라운드마다 참가자(present) 전원이 한 번씩 나와야 한다. 2코트를 채우려면 8명 이상 필요하다.
   function isValidSchedule(s, present = Array.from({ length: 10 }, (_, i) => i)) {
-    const n = present.length, want = present.join('');
-    if (n < 8 || !new RegExp(`^[0-9]{${R * n}}$`).test(s)) return false;
+    const n = present.length, want = present.map(i => i.toString(36)).join('');
+    if (n < 8 || !new RegExp(`^[0-9a-z]{${R * n}}$`).test(s)) return false;
     for (let r = 0; r < R; r++) if ([...s.slice(r * n, r * n + n)].sort().join('') !== want) return false;
     return true;
   }
 
   const id = (role, i) => role + i;
-  const nameOf = (pid) => names[pid[0]][+pid[1]];
+  const nameOf = (pid) => names[pid[0]][+pid.slice(1)];
   const roleLabel = (pid) => pid[0] === 'm' ? '클럽원' : '게스트';
   const isFemale = (pid) => names.w.includes(pid);
   const fBadge = (pid) => isFemale(pid) ? '<span class="f">여</span>' : '';
@@ -297,10 +299,10 @@
   }
 
   // SCHEDULE[r] = { courts: [{ teams: [[pid, pid], [pid, pid]], type }, ...], rest: [pid, ...] }
-  // rest는 10명이면 2명, 9명이면 1명, 8명이면 빈 배열
+  // rest는 참가 인원에서 8명을 뺀 수. 8명이면 빈 배열
   const SCHEDULE = Array.from({ length: R }, (_, r) => {
     const n = PLAYERS.length;
-    const row = [...names.s.slice(r * n, r * n + n)].map(d => idxToPid(+d));
+    const row = [...names.s.slice(r * n, r * n + n)].map(d => idxToPid(parseInt(d, 36)));
     const courts = [0, 4].map(c => {
       const teams = [[row[c], row[c + 1]], [row[c + 2], row[c + 3]]];
       return { teams, type: matchType(...teams) };

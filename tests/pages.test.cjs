@@ -15,8 +15,8 @@ function link(overrides = {}) {
   return url.href;
 }
 
-function formValues(isF = Array(10).fill(0)) {
-  return Object.fromEntries([...members, ...guests].flatMap((name, p) => [
+function formValues(isF = Array(10).fill(0), guestNames = guests) {
+  return Object.fromEntries([...members, ...guestNames].flatMap((name, p) => [
     [pid(p), name], [`s${pid(p)}`, isF[p] ? 'f' : 'm'],
   ]));
 }
@@ -147,14 +147,23 @@ test('결석한 클럽원이 본인으로 저장되어 있으면 선택하지 �
   assert.match(present.element('me').innerHTML, /정선진.*클럽원 · 10게임 · 휴식 없음/s);
 });
 
-test('설정 입력 검증: 결석 3명', () => {
-  const form = { ...formValues(), xm0: 'on', xm1: 'on', xm2: 'on' };
-  const page = loadPage('setup.html', { form });
-  page.context.buildSchedule = () => assert.fail('잘못된 입력으로 대진을 생성하면 안 된다');
-  page.context.build();
-  assert.equal(page.element('error').hidden, false);
-  assert.match(page.element('error').textContent, /최대 2명/);
-});
+for (const [name, guestCount, absent] of [
+  ['게스트 5명·결석 3명', 5, ['m0', 'm1', 'm2']],
+  ['게스트 2명', 2, []],
+  ['게스트 3명·결석 1명', 3, ['m1']],
+  ['게스트 없음', 0, []],
+]) {
+  test(`설정 입력 검증: 참가자 8명 미만 (${name})`, () => {
+    const extra = Array.from({ length: guestCount }, (_, i) => `게스트${i + 1}`);
+    const form = formValues(Array(5 + guestCount).fill(0), extra);
+    for (const id of absent) form[`x${id}`] = 'on';
+    const page = loadPage('setup.html', { form });
+    page.context.buildSchedule = () => assert.fail('잘못된 입력으로 대진을 생성하면 안 된다');
+    page.context.build();
+    assert.equal(page.element('error').hidden, false);
+    assert.match(page.element('error').textContent, new RegExp(`8명 이상.*지금은 ${5 + guestCount - absent.length}명`));
+  });
+}
 
 const invalidLinks = [
   ['대진 누락', { s: null }], ['빈 대진', { s: '' }],
@@ -167,8 +176,11 @@ const invalidLinks = [
   ['마지막 라운드 중복', { s: validSchedule.slice(0, 90) + '0123456788' }],
   ['클럽원 4명', { m: members.slice(0, 4).join(',') }],
   ['클럽원 6명', { m: [...members, '추가'].join(',') }],
-  ['게스트 4명', { g: guests.slice(0, 4).join(',') }],
-  ['게스트 6명', { g: [...guests, '추가'].join(',') }],
+  ['게스트 4명에 10명 대진', { g: guests.slice(0, 4).join(',') }],
+  ['게스트 6명에 10명 대진', { g: [...guests, '추가'].join(',') }],
+  ['게스트 2명(참가 7명)', { g: guests.slice(0, 2).join(','), s: '0123456'.repeat(10) }],
+  ['게스트 6명인데 없는 선수 b', { g: [...guests, '추가'].join(','), s: '0123456789b'.repeat(10) }],
+  ['대문자 인덱스', { g: [...guests, '추가'].join(','), s: '0123456789A'.repeat(10) }],
   ['빈 이름', { m: '권순범,김일두, ,정선진,조진희' }],
   ['명단 누락', { m: null, g: null }],
   ['결석 표시 없이 90자리', { s: '123456789'.repeat(10) }],
@@ -217,3 +229,165 @@ for (const [name, changes, base, message] of [
     assert.equal(page.element('result').classList.contains('show'), false);
   });
 }
+
+// ---- 요구사항: 게스트 수 가변 ----
+for (const [guestCount, absent] of [[3, []], [4, ['m0']], [6, ['m1', 'm2', 'm3']], [7, []], [10, ['m2']]]) {
+  test(`게스트 ${guestCount}명·결석 ${absent.length}명: 생성 링크를 대진표가 그대로 그린다`, () => {
+    const extra = Array.from({ length: guestCount }, (_, i) => `손님${i + 1}`);
+    const total = 5 + guestCount, n = total - absent.length;
+    const isF = Array.from({ length: total }, (_, p) => p === 4 || p % 3 === 0 ? 1 : 0);
+    const form = formValues(isF, extra);
+    for (const id of absent) form[`x${id}`] = 'on';
+    const setup = loadPage('setup.html', { seed: guestCount, form });
+    setup.context.build();
+    assert.equal(setup.element('error').hidden, true, setup.element('error').textContent);
+    const url = new URL(setup.element('url').textContent);
+    assert.equal(url.searchParams.get('g'), extra.join(','));
+    const schedule = url.searchParams.get('s');
+    assert.match(schedule, new RegExp(`^[0-9a-z]{${10 * n}}$`));
+    // 10번째 이후 선수(인덱스 10~)는 a~ 문자로 담긴다.
+    if (total > 10) assert.match(schedule, /[a-z]/);
+    const present = Array.from({ length: total }, (_, p) => pid(p)).filter(id => !absent.includes(id));
+    const summary = summaryRows(setup.element('summary').innerHTML);
+    assert.deepEqual(summary.map(row => row.name.replace(/<.*/, '')),
+      [...members, ...extra].filter((_, p) => !absent.includes(pid(p))));
+    assert.deepEqual(JSON.parse(setup.context.localStorage.getItem('fs-setup')).g, extra);
+
+    const page = loadPage('index.html', { url: url.href });
+    assert.equal(page.element('notice').hidden, true);
+    assert.deepEqual(plain(page.read('PLAYERS')), present);
+    const loaded = plain(page.read('SCHEDULE'));
+    loaded.forEach((round, r) => {
+      const order = [...round.courts.flatMap(c => c.teams.flat()), ...round.rest];
+      assert.deepEqual(order, [...schedule.slice(r * n, r * n + n)].map(d => pid(parseInt(d, 36))));
+      assert.equal(round.rest.length, n - 8);
+    });
+    const chips = page.element('chipsG').innerHTML;
+    extra.forEach((name, i) => assert.match(chips, new RegExp(`data-pid="g${i}"[^>]*>${name}<`)));
+    assert.match(page.element('meta').innerHTML, new RegExp(`${n}명 · 10라운드`));
+    // 10번 이후 게스트도 본인으로 선택하면 해당 이름의 일정이 나온다.
+    const last = `g${guestCount - 1}`;
+    const mine = loadPage('index.html', { url: url.href, stored: { 'fs-me': last } });
+    assert.equal(mine.read('me'), last);
+    assert.match(mine.element('me').innerHTML, new RegExp(`<strong>${extra[guestCount - 1]}</strong>`));
+  });
+}
+
+test('기존 10명 링크(숫자 100자리)는 그대로 열린다', () => {
+  const page = loadPage('index.html', { url: link({ w: 'm4' }) });
+  assert.equal(page.element('notice').hidden, true);
+  assert.equal(page.read('PLAYERS.length'), 10);
+});
+
+function guestRows(html) {
+  return [...html.matchAll(/name="(g\d+)" value="([^"]*)"/g)].map(([, id, value]) => {
+    const female = new RegExp(`name="s${id}" value="f" checked`).test(html);
+    return `${value}${female ? '(여)' : ''}`;
+  });
+}
+
+test('게스트 추가: 입력값과 성별을 유지한 채 빈 칸을 하나 늘린다', () => {
+  const isF = [0, 0, 0, 0, 1, 0, 1, 0, 0, 1];
+  const page = loadPage('setup.html', { form: formValues(isF) });
+  page.context.addGuest();
+  assert.deepEqual(guestRows(page.element('guests').innerHTML),
+    ['문경신', '남기정(여)', '최주영', '김희정', '윤진주(여)', '']);
+  assert.equal(page.element('addGuest').disabled, false);
+});
+
+test('게스트 삭제: 뒤쪽 게스트의 이름과 성별이 한 칸씩 당겨진다', () => {
+  const isF = [0, 0, 0, 0, 1, 0, 1, 1, 0, 1];
+  const page = loadPage('setup.html', { form: formValues(isF) });
+  page.context.removeGuest(1);
+  assert.deepEqual(guestRows(page.element('guests').innerHTML),
+    ['문경신', '최주영(여)', '김희정', '윤진주(여)']);
+  assert.match(page.element('guests').innerHTML, /data-remove="3"/);
+  assert.doesNotMatch(page.element('guests').innerHTML, /data-remove="4"/);
+});
+
+test(`게스트는 최대 10명까지 추가할 수 있다`, () => {
+  const extra = Array.from({ length: 9 }, (_, i) => `손님${i + 1}`);
+  const page = loadPage('setup.html', { form: formValues(Array(14).fill(0), extra) });
+  page.context.addGuest();
+  assert.equal(guestRows(page.element('guests').innerHTML).length, 10);
+  assert.equal(page.element('addGuest').disabled, true);
+});
+
+test('저장된 게스트 수대로 입력 칸을 만들고, 저장값이 없으면 5칸으로 시작한다', () => {
+  const saved = { m: members, g: ['가', '나', '다', '라', '마', '바', '사'], w: ['g6'], x: [], base: 'https://example.test/index.html' };
+  const restored = loadPage('setup.html', { stored: { 'fs-setup': JSON.stringify(saved) } });
+  assert.deepEqual(guestRows(restored.element('guests').innerHTML), ['가', '나', '다', '라', '마', '바', '사(여)']);
+  const fresh = loadPage('setup.html');
+  assert.deepEqual(guestRows(fresh.element('guests').innerHTML), ['', '', '', '', '']);
+});
+
+test('결석 3명이어도 게스트가 6명이면 8명으로 생성한다', () => {
+  const extra = [...guests, '추가'];
+  const form = formValues(Array(11).fill(0), extra);
+  for (const id of ['m0', 'm1', 'm2']) form[`x${id}`] = 'on';
+  const setup = loadPage('setup.html', { form });
+  setup.context.build();
+  assert.equal(setup.element('error').hidden, true);
+  assert.match(new URL(setup.element('url').textContent).searchParams.get('s'), /^[0-9a]{80}$/);
+});
+
+// ---- 요구사항: 조진희는 항상 2코트 / 남남 vs 여여 금지 (생성 링크 기준) ----
+function courtsOf(page) {
+  return plain(page.read('SCHEDULE')).map(round => round.courts.map(c => c.teams));
+}
+
+for (const [label, guestCount, isFemaleGuest, absent] of [
+  ['기본 10명, 여성 4명', 5, [0, 1, 1, 0, 1], []],
+  ['기본 10명, 여성 6명', 5, [1, 1, 1, 0, 1], []],
+  ['결석 1명, 여성 2명', 5, [0, 1, 0, 0, 0], ['m0']],
+  ['게스트 7명, 여성 5명', 7, [1, 0, 1, 0, 1, 0, 0], []],
+  ['게스트 3명, 여성 3명', 3, [1, 1, 0], []],
+]) {
+  test(`조진희 2코트·남남 vs 여여 없음: ${label}`, () => {
+    for (const seed of [1, 2, 3]) {
+      const extra = Array.from({ length: guestCount }, (_, i) => `손님${i + 1}`);
+      const isF = [0, 0, 0, 0, 1, ...isFemaleGuest];
+      const form = formValues(isF, extra);
+      for (const id of absent) form[`x${id}`] = 'on';
+      const setup = loadPage('setup.html', { seed, form });
+      setup.context.build();
+      const page = loadPage('index.html', { url: setup.element('url').textContent });
+      assert.equal(page.element('notice').hidden, true);
+      const female = id => isF[id[0] === 'm' ? +id.slice(1) : 5 + +id.slice(1)];
+      courtsOf(page).forEach((courts, r) => {
+        assert.equal(courts[0].flat().includes('m4'), false, `seed ${seed} ${r + 1}라운드 조진희 1코트`);
+        courts.forEach(([a, b]) => {
+          const fa = female(a[0]) + female(a[1]), fb = female(b[0]) + female(b[1]);
+          assert.ok(!(fa + fb === 2 && fa !== fb), `seed ${seed} ${r + 1}라운드 남남 vs 여여`);
+        });
+      });
+      assert.ok(courtsOf(page).some(courts => courts[1].flat().includes('m4')), '조진희가 경기한 라운드가 있다');
+    }
+  });
+}
+
+test('조진희가 게스트 칸에 있어도 2코트에 배정한다', () => {
+  const memberNames = ['권순범', '김일두', '손원식', '정선진', '홍길동'];
+  const guestNames = ['문경신', '조진희', '최주영', '김희정', '윤진주'];
+  const isF = [0, 0, 0, 0, 0, 0, 1, 1, 1, 1];
+  const form = Object.fromEntries([...memberNames, ...guestNames].flatMap((name, p) => [
+    [pid(p), name], [`s${pid(p)}`, isF[p] ? 'f' : 'm'],
+  ]));
+  for (const seed of [1, 2, 3]) {
+    const setup = loadPage('setup.html', { seed, form });
+    setup.context.build();
+    const page = loadPage('index.html', { url: setup.element('url').textContent });
+    courtsOf(page).forEach(courts => assert.equal(courts[0].flat().includes('g1'), false));
+  }
+});
+
+test('조진희가 결석하면 2코트 고정 없이 코트 순서 규칙만 적용한다', () => {
+  const isF = [0, 0, 0, 0, 1, 0, 1, 1, 1, 1];
+  const form = { ...formValues(isF), xm4: 'on' };
+  const setup = loadPage('setup.html', { seed: 5, form });
+  let court2;
+  const original = setup.context.buildSchedule;
+  setup.context.buildSchedule = (...args) => { court2 = args[2]; return original(...args); };
+  setup.context.build();
+  assert.deepEqual(plain(court2), []);
+});

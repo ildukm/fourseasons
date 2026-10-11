@@ -10,7 +10,18 @@ function generate(isF, seed) {
   return rounds;
 }
 
+// 남남 vs 여여 경기는 어떤 성별 구성에서도 없어야 한다.
+function assertNoSplit(rounds, isF) {
+  for (const [r, row] of rounds.entries()) {
+    for (let c = 0; c < 8; c += 4) {
+      const a = isF[row[c]] + isF[row[c + 1]], b = isF[row[c + 2]] + isF[row[c + 3]];
+      assert.ok(!(a + b === 2 && a !== b), `${r + 1}라운드 ${c / 4 + 1}코트 남남 vs 여여`);
+    }
+  }
+}
+
 function inspect(rounds, isF) {
+  assertNoSplit(rounds, isF);
   const rest = Array(10).fill(0);
   const counts = Array.from({ length: 10 }, () => [0, 0, 0, 0]);
   const games = [0, 0, 0, 0];
@@ -289,6 +300,7 @@ for (const absent of [[2], [0, 4]]) {
             assert.ok(courtWomen(0) <= courtWomen(4), '코트 순서는 남복·혼복·여복 순');
           }
         }
+        assertNoSplit(rounds, isF);
         const counts = players.map(p => rest[p]);
         assert.ok(Math.max(...counts) - Math.min(...counts) <= 1, '휴식 횟수 차이는 1 이하');
         assert.equal(counts.reduce((a, b) => a + b), 10 * (n - 8));
@@ -297,3 +309,129 @@ for (const absent of [[2], [0, 4]]) {
     }
   });
 }
+
+// ---- 요구사항: 남남 vs 여여 금지 ----
+test('남남 vs 여여는 파트너 반복이 더 많은 혼복 대진보다 점수가 나쁘다', () => {
+  const { context } = loadPage('setup.html');
+  const isF = [0, 0, 1, 1, 0, 0, 0, 0, 0, 0];
+  // 1라운드만 0,1(남남) vs 2,3(여여)이고 나머지는 0,2 vs 1,3 혼복을 반복한다.
+  const mixedRow = [0, 2, 1, 3, 4, 5, 6, 7, 8, 9];
+  const split = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], ...Array.from({ length: 9 }, () => mixedRow.slice())];
+  // 1라운드도 혼복으로 바꾸면 0-2, 1-3 파트너 반복이 한 번씩 늘어난다.
+  const mixed = Array.from({ length: 10 }, () => mixedRow.slice());
+  for (const preferred of [false, true]) {
+    assert.ok(context.scheduleCost(split, isF, preferred) > context.scheduleCost(mixed, isF, preferred));
+  }
+});
+
+test('남남 vs 여여 페널티는 남복·여복 페널티 합계 상한보다 크다', () => {
+  const page = loadPage('setup.html');
+  assert.ok(page.read('W.split') > 20 * page.read('W.sameSex'));
+});
+
+test('남녀 2~3명이 섞여도 남남 vs 여여 경기를 만들지 않는다 (게스트 수·결석 포함)', () => {
+  for (const total of [8, 9, 10, 11, 12, 15]) {
+    for (const women of [2, 3, total - 3, total - 2]) {
+      for (const seed of [1, 2, 3, 4]) {
+        const isF = Array.from({ length: total }, (_, p) => (p * 3 + seed) % total < women ? 1 : 0);
+        const { context } = loadPage('setup.html', { seed });
+        assertNoSplit(context.buildSchedule(isF), isF);
+      }
+    }
+  }
+});
+
+// ---- 요구사항: 게스트 수 가변 ----
+// 참가자가 8~15명일 때 라운드·휴식·코트 구성을 검증한다.
+for (const guests of [3, 4, 6, 7, 10]) {
+  for (const absent of [[], [1], [0, 2, 4]]) {
+    const total = 5 + guests;
+    const players = Array.from({ length: total }, (_, p) => p).filter(p => !absent.includes(p));
+    const n = players.length;
+    if (n < 8) continue;
+    test(`게스트 ${guests}명, 결석 ${absent.length}명(${n}명): 참가자 전원이 라운드마다 한 번씩 나오고 휴식이 고르다`, () => {
+      for (const women of [0, 3, 4, Math.floor(n / 2), n - 4, n]) {
+        for (const seed of [1, 2]) {
+          const isF = Array(total).fill(0);
+          players.forEach((p, i) => { if ((i * 5 + seed) % n < women) isF[p] = 1; });
+          const { context } = loadPage('setup.html', { seed });
+          const rounds = context.buildSchedule(isF, players);
+          const rest = Array(total).fill(0);
+          assert.equal(rounds.length, 10);
+          for (const row of rounds) {
+            assert.deepEqual(Array.from(row).sort((a, b) => a - b), players, `여성 ${women}, seed ${seed}`);
+            row.slice(8).forEach(p => rest[p]++);
+            if (women >= 4 && n - women >= 4) {
+              const courtWomen = c => row.slice(c, c + 4).reduce((sum, p) => sum + isF[p], 0);
+              assert.ok(courtWomen(0) <= courtWomen(4), '코트 순서는 남복·혼복·여복 순');
+            }
+          }
+          assertNoSplit(rounds, isF);
+          const counts = players.map(p => rest[p]);
+          assert.ok(Math.max(...counts) - Math.min(...counts) <= 1, '휴식 횟수 차이는 1 이하');
+          assert.equal(counts.reduce((a, b) => a + b), 10 * (n - 8));
+          absent.forEach(p => assert.equal(rest[p], 0));
+        }
+      }
+    });
+  }
+}
+
+test('게스트 6명·결석 1명으로 10명이면 결석 없는 10명과 같은 남복·여복 최대치를 낸다', () => {
+  const players = [0, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  for (const women of [4, 5, 6]) {
+    const isF = Array(11).fill(0);
+    players.forEach((p, i) => { if ((i * 3) % 10 < women) isF[p] = 1; });
+    const { context } = loadPage('setup.html', { seed: women });
+    const rounds = context.buildSchedule(isF, players);
+    const games = [0, 0, 0, 0];
+    for (const row of rounds) for (let c = 0; c < 8; c += 4) {
+      const a = isF[row[c]] + isF[row[c + 1]], b = isF[row[c + 2]] + isF[row[c + 3]];
+      games[a === b ? a : 3]++;
+    }
+    assert.deepEqual(games, women === 5 ? [10, 0, 10, 0] : women === 4 ? [10, 4, 6, 0] : [6, 4, 10, 0]);
+  }
+});
+
+// ---- 요구사항: 조진희는 항상 2코트 ----
+test('court2로 지정한 선수는 경기하는 라운드마다 2코트에 있고 나머지 순서 규칙은 유지된다', () => {
+  let overridden = 0;
+  for (const [total, absent] of [[10, []], [9, [1]], [8, []], [12, [0]], [15, []]]) {
+    const players = Array.from({ length: total }, (_, p) => p).filter(p => !absent.includes(p));
+    for (const women of [1, 4, 5, 6]) {
+      for (const seed of [1, 2, 3]) {
+        const isF = Array(total).fill(0);
+        isF[4] = 1;  // 조진희(m4)는 여성
+        players.filter(p => p !== 4).slice(0, women - 1).forEach(p => { isF[p] = 1; });
+        const { context } = loadPage('setup.html', { seed });
+        const rounds = context.buildSchedule(isF, players, [4]);
+        const courtWomen = (row, c) => row.slice(c, c + 4).reduce((sum, p) => sum + isF[p], 0);
+        const balanced = women >= 4 && players.length - women >= 4;
+        let played = 0;
+        for (const row of rounds) {
+          const i = row.indexOf(4);
+          if (i < 8) {
+            played++;
+            assert.ok(i >= 4, `${total}명 여성 ${women} seed ${seed}: 1코트 배정`);
+            if (balanced && courtWomen(row, 0) > courtWomen(row, 4)) overridden++;
+          } else if (balanced) {
+            assert.ok(courtWomen(row, 0) <= courtWomen(row, 4), '코트 순서는 남복·혼복·여복 순');
+          }
+        }
+        assert.ok(played > 0);
+        assertNoSplit(rounds, isF);
+      }
+    }
+  }
+  // 조진희 혼복 + 다른 코트 여복처럼 코트 순서 규칙과 충돌하는 라운드도 실제로 검증했다.
+  assert.ok(overridden > 0);
+});
+
+test('court2 지정은 점수와 무관한 코트 교환이라 남복·여복 수와 파트너 구성을 바꾸지 않는다', () => {
+  const isF = [0, 0, 0, 0, 1, 0, 0, 1, 1, 1];
+  const a = loadPage('setup.html', { seed: 42 }).context.buildSchedule(isF);
+  const b = loadPage('setup.html', { seed: 42 }).context.buildSchedule(isF, undefined, [4]);
+  const courts = rounds => JSON.stringify(rounds.map(row => [row.slice(0, 4).join(), row.slice(4, 8).join()].sort()));
+  assert.equal(courts(b), courts(a));
+  b.forEach(row => assert.ok(row.indexOf(4) >= 4));
+});

@@ -78,7 +78,11 @@
   .sex span { display: block; padding: 10px 12px; font-size: 14px; color: var(--ink-2); }
   .sex input:checked + span { background: var(--ink); color: var(--bg); font-weight: 500; }
   .sex input:focus-visible + span { outline: 3px solid var(--focus); outline-offset: -3px; }
-  .field.member { grid-template-columns: 28px minmax(0, 1fr) auto auto; }
+  .field.member, .field.guest { grid-template-columns: 28px minmax(0, 1fr) auto auto; }
+  .remove { border: 1px solid var(--line); border-radius: 10px; background: none; padding: 10px 12px; font-size: 14px; color: var(--ink-2); }
+  #guests:empty { display: none; }
+  .add { width: 100%; margin-top: 8px; }
+  .add:disabled { opacity: .5; cursor: default; }
   .absent { position: relative; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
   .absent input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
   .absent span { display: block; padding: 10px 12px; font-size: 14px; color: var(--ink-2); }
@@ -132,19 +136,20 @@
   <header>
     <div class="eyebrow">Four Seasons Tennis</div>
     <h1>명단 설정</h1>
-    <div class="meta">클럽원 5명과 게스트 5명의 이름과 성별을 입력하고 생성을 누르면 대진표 링크가 만들어집니다. 못 나오는 클럽원은 결석을 누르세요. 남복·여복을 최대한 편성하고, 그 안에서 파트너 반복을 줄입니다. 필요한 경우 혼복을 섞습니다.</div>
+    <div class="meta">클럽원과 게스트의 이름과 성별을 입력하고 생성을 누르면 대진표 링크가 만들어집니다. 못 나오는 클럽원은 결석을 누르고, 게스트는 추가하거나 삭제하세요. 남복·여복을 최대한 편성하고, 그 안에서 파트너 반복을 줄입니다. 필요한 경우 혼복을 섞습니다.</div>
   </header>
 
   <form id="form" class="wrap" style="padding:0;gap:18px" novalidate>
     <section>
       <p class="label">클럽원</p>
       <div class="card fields" id="members"></div>
-      <p class="hint">기본 클럽원 명단이 채워져 있습니다. 결석은 최대 2명까지 누를 수 있고, 9명이면 라운드마다 1명, 8명이면 아무도 쉬지 않습니다. 수정한 명단은 이 기기에 기억됩니다.</p>
+      <p class="hint">기본 클럽원 명단이 채워져 있습니다. 2코트를 채우려면 참가자가 8명 이상이어야 합니다. 8명이면 아무도 쉬지 않고, 그보다 많으면 라운드마다 남는 인원이 쉽니다. 수정한 명단은 이 기기에 기억됩니다.</p>
     </section>
 
     <section>
       <p class="label">게스트</p>
       <div class="card fields" id="guests"></div>
+      <button class="btn add" type="button" id="addGuest">게스트 추가</button>
     </section>
 
     <section>
@@ -172,10 +177,13 @@
 <div class="toast" id="toast" role="status"></div>
 
 <script>
-  const N = 5;
+  const N = 5;  // 클럽원 수
+  const DEFAULT_GUESTS = 5;
+  const MAX_GUESTS = 10;
   const STORE = 'fs-setup';
   const CLUB_MEMBERS = ['권순범', '김일두', '손원식', '정선진', '조진희'];
   const CLUB_WOMEN = ['조진희']; // 기본값은 남. 여기 있는 클럽원만 여로 시작
+  const COURT2_ONLY = ['조진희']; // 이 이름의 참가자는 경기하는 라운드마다 2코트에 배정
 
   function safeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function safeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
@@ -183,18 +191,19 @@
   let saved = {};
   try { saved = JSON.parse(safeGet(STORE)) || {}; } catch (e) {}
 
-  function fieldsHtml(prefix, values, women, ph, absent) {
-    return Array.from({ length: N }, (_, i) => {
+  function fieldsHtml(prefix, count, values, women, ph, absent) {
+    return Array.from({ length: count }, (_, i) => {
       const f = women.includes(prefix + i);
       return `
-      <div class="field${absent ? ' member' : ''}">
+      <div class="field${absent ? ' member' : ' guest'}">
         <span class="no">${i + 1}</span>
         <input type="text" name="${prefix}${i}" value="${esc(values[i] || '')}" placeholder="${ph} ${i + 1}" maxlength="12" autocomplete="off" aria-label="${ph} ${i + 1}">
         <div class="sex" role="radiogroup" aria-label="${ph} ${i + 1} 성별">
           <label><input type="radio" name="s${prefix}${i}" value="m"${f ? '' : ' checked'}><span>남</span></label>
           <label><input type="radio" name="s${prefix}${i}" value="f"${f ? ' checked' : ''}><span>여</span></label>
         </div>${absent ? `
-        <label class="absent"><input type="checkbox" name="x${prefix}${i}" aria-label="${ph} ${i + 1} 결석"${absent.includes(prefix + i) ? ' checked' : ''}><span>결석</span></label>` : ''}
+        <label class="absent"><input type="checkbox" name="x${prefix}${i}" aria-label="${ph} ${i + 1} 결석"${absent.includes(prefix + i) ? ' checked' : ''}><span>결석</span></label>` : `
+        <button type="button" class="remove" data-remove="${i}" aria-label="${ph} ${i + 1} 삭제">삭제</button>`}
       </div>`;
     }).join('');
   }
@@ -202,17 +211,43 @@
 
   const defaultWomen = CLUB_MEMBERS.map((n, i) => CLUB_WOMEN.includes(n) ? 'm' + i : '').filter(Boolean);
   const women = saved.w || defaultWomen;
-  document.getElementById('members').innerHTML = fieldsHtml('m', saved.m || CLUB_MEMBERS, women, '클럽원', saved.x || []);
-  document.getElementById('guests').innerHTML = fieldsHtml('g', saved.g || [], women, '게스트');
+  document.getElementById('members').innerHTML = fieldsHtml('m', N, saved.m || CLUB_MEMBERS, women, '클럽원', saved.x || []);
+  renderGuests(saved.g || Array(DEFAULT_GUESTS).fill(''), women);
   document.getElementById('base').value = saved.base || new URL('index.html', location.href).href;
 
+  function renderGuests(values, women) {
+    document.getElementById('guests').innerHTML = fieldsHtml('g', values.length, values, women, '게스트');
+    document.getElementById('addGuest').disabled = values.length >= MAX_GUESTS;
+  }
+  function addGuest() {
+    renderGuests([...readList('g'), ''], readWomen());
+  }
+  // 삭제한 게스트 뒤의 id가 하나씩 당겨지므로 여성 id도 함께 옮긴다.
+  function removeGuest(i) {
+    const g = readList('g');
+    g.splice(i, 1);
+    const w = readWomen().flatMap(pid => {
+      const k = +pid.slice(1);
+      return pid[0] === 'm' || k < i ? [pid] : k > i ? ['g' + (k - 1)] : [];
+    });
+    renderGuests(g, w);
+  }
+  document.getElementById('addGuest').addEventListener('click', addGuest);
+  document.getElementById('guests').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove]');
+    if (btn) removeGuest(+btn.dataset.remove);
+  });
+
+  // 입력 칸이 있는 만큼 읽는다. 게스트 수는 화면의 행 수다.
   function readList(prefix) {
     const fd = new FormData(document.getElementById('form'));
-    return Array.from({ length: N }, (_, i) => (fd.get(prefix + i) || '').trim());
+    const list = [];
+    for (let i = 0; fd.get(prefix + i) !== null; i++) list.push(fd.get(prefix + i).trim());
+    return list;
   }
   function readWomen() {
     const fd = new FormData(document.getElementById('form'));
-    return ['m', 'g'].flatMap(prefix => Array.from({ length: N }, (_, i) => prefix + i).filter(pid => fd.get('s' + pid) === 'f'));
+    return ['m', 'g'].flatMap(prefix => readList(prefix).map((_, i) => prefix + i).filter(pid => fd.get('s' + pid) === 'f'));
   }
   function readAbsent() {
     const fd = new FormData(document.getElementById('form'));
@@ -246,8 +281,8 @@
       err.hidden = false;
       return;
     }
-    if (x.length > 2) {
-      err.textContent = '2코트를 채우려면 8명이 필요해서 결석은 최대 2명까지 가능합니다.';
+    if (m.length + g.length - x.length < 8) {
+      err.textContent = `2코트를 채우려면 참가자가 8명 이상 필요합니다. 지금은 ${m.length + g.length - x.length}명입니다.`;
       err.hidden = false;
       return;
     }
@@ -268,13 +303,16 @@
     const present = w.filter(pid => !x.includes(pid));
     if (present.length) url.searchParams.set('w', present.join(',')); else url.searchParams.delete('w');
     if (x.length) url.searchParams.set('x', x.join(',')); else url.searchParams.delete('x');
-    const pidOf = (i) => i < 5 ? 'm' + i : 'g' + (i - 5);
-    const isF = Array.from({ length: P }, (_, i) => w.includes(pidOf(i)) ? 1 : 0);
-    const players = Array.from({ length: P }, (_, i) => i).filter(i => !x.includes(pidOf(i)));
-    const rounds = buildSchedule(isF, players);
-    url.searchParams.set('s', rounds.map(row => row.join('')).join(''));
+    const all = [...m, ...g];
+    const pidOf = (i) => i < N ? 'm' + i : 'g' + (i - N);
+    const isF = all.map((_, i) => w.includes(pidOf(i)) ? 1 : 0);
+    const players = all.map((_, i) => i).filter(i => !x.includes(pidOf(i)));
+    const court2 = players.filter(i => COURT2_ONLY.includes(all[i]));
+    const rounds = buildSchedule(isF, players, court2);
+    // 선수 인덱스를 36진수 한 글자로 담는다. 10명 이하는 숫자만 쓴다.
+    url.searchParams.set('s', rounds.map(row => row.map(p => p.toString(36)).join('')).join(''));
     const link = url.href;
-    document.getElementById('summary').innerHTML = summaryHtml(rounds, isF, [...m, ...g], players);
+    document.getElementById('summary').innerHTML = summaryHtml(rounds, isF, all, players);
 
     document.getElementById('url').textContent = link;
     document.getElementById('open').href = link;
@@ -293,16 +331,17 @@
   });
 
   // ---- 대진 생성 ----
-  const R = 10;  // 라운드 수
-  const P = 10;  // 인원. 0~4 클럽원, 5~9 게스트
+  const R = 10;  // 라운드 수. 선수 인덱스는 0~4 클럽원, 5~ 게스트
 
+  // 남남 vs 여여 1경기의 페널티는 남복·여복 페널티 합계 상한(20 × 1000000000)보다 크다.
   // 남복·여복 1경기 감소의 페널티가 나머지 유한 페널티 합계 상한보다 크다.
   // 파트너 페널티는 최대 4 × (R - 1)² × 1000000 = 324,000,000이다.
   // 연속 반복은 최대 8 × (R - 1)건. 하위 페널티 합은 10000 미만이므로
   // 남복·여복 최대화 > 전체 파트너 반복 최소화 > 연속 파트너 반복 최소화를 유지한다.
-  const W = { gender: 60, partner: 1000000, consecutive: 10000, opp: 1, mix: 3, rest: 10, sameSex: 1000000000, balance: 1 };
+  const W = { gender: 60, partner: 1000000, consecutive: 10000, opp: 1, mix: 3, rest: 10, sameSex: 1000000000, balance: 1, split: 100000000000 };
 
   function scheduleCost(rounds, isF, preferSameSex) {
+    const P = isF.length;
     let cost = 0;
     const mixed = new Uint8Array(P);
     const partner = new Uint8Array(P * P), opp = new Uint8Array(P * P);
@@ -322,6 +361,8 @@
         const fa = isF[a] + isF[b], fb = isF[x] + isF[y];
         // 동성 복식 우선 모드는 균형 잡힌 대진에서 시작하고 그 조건을 유지한다.
         if (preferSameSex && fa !== fb) return Infinity;
+        // 남남 vs 여여는 허용하지 않는다. 같은 코트를 혼복으로 바꾸면 남복·여복 수는 그대로다.
+        if (fa + fb === 2 && fa !== fb) cost += W.split;
         if (!(fa === 0 && fb === 0) && !(fa === 2 && fb === 2)) cost += W.sameSex;
         cost += W.gender * Math.abs(fa - fb);
         if (fa === 1 && fb === 1) {
@@ -349,12 +390,13 @@
   }
 
   // rounds[r]: 참가 인원 길이의 배열. [0..3] 1코트(0,1 vs 2,3), [4..7] 2코트(4,5 vs 6,7), [8..] 휴식.
-  // players: 참가자 인덱스. 클럽원 결석 시 8~9명이며 9명이면 라운드당 1명, 8명이면 아무도 쉬지 않는다.
-  function buildSchedule(isF, players = Array.from({ length: P }, (_, p) => p)) {
+  // players: 참가자 인덱스. 8명 이상이며 라운드마다 8명을 뺀 나머지가 쉰다.
+  // court2: 경기하는 라운드마다 2코트에 둘 참가자 인덱스.
+  function buildSchedule(isF, players = isF.map((_, p) => p), court2 = []) {
     const n = players.length, restPerRound = n - 8;
     const men = players.filter(p => !isF[p]), women = players.filter(p => isF[p]);
     const balanced = men.length >= 4 && women.length >= 4;
-    const preferSameSex = balanced && n === P;
+    const preferSameSex = balanced && n === 10;
     const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
     // 휴식은 무작위 순서로 돌아가며 배정한다. 9명이면 한 명만 2회 쉰다.
     const restOrder = shuffle(players.slice());
@@ -440,14 +482,13 @@
         best = rounds.map(row => row.slice());
       }
     }
-    if (balanced) {
-      // 코트 순서는 남복·혼복·여복 순으로 고정한다. 점수는 코트 순서와 무관하다.
-      const courtWomen = (row, c) => isF[row[c]] + isF[row[c + 1]] + isF[row[c + 2]] + isF[row[c + 3]];
-      for (const row of best) {
-        if (courtWomen(row, 0) > courtWomen(row, 4)) {
-          for (let i = 0; i < 4; i++) swap(row, i, i + 4);
-        }
-      }
+    // 코트 순서는 남복·혼복·여복 순으로 고정한다. 점수는 코트 순서와 무관하다.
+    // court2 참가자가 1코트에 있으면 이 순서보다 우선해 코트를 맞바꾼다.
+    const courtWomen = (row, c) => isF[row[c]] + isF[row[c + 1]] + isF[row[c + 2]] + isF[row[c + 3]];
+    const swapCourts = (row) => { for (let i = 0; i < 4; i++) swap(row, i, i + 4); };
+    for (const row of best) {
+      if (balanced && courtWomen(row, 0) > courtWomen(row, 4)) swapCourts(row);
+      if (row.slice(0, 4).some(p => court2.includes(p))) swapCourts(row);
     }
     return best;
   }
@@ -455,7 +496,7 @@
   // 인원별 남복/혼복/여복 횟수 표. 양 팀 여성 수가 다른 경기는 "기타"로 센다. 결석자는 표시하지 않는다.
   const TYPE_NAMES = ['남복', '혼복', '여복', '기타'];
   function summaryHtml(rounds, isF, allNames, players = allNames.map((_, i) => i)) {
-    const counts = Array.from({ length: P }, () => [0, 0, 0, 0]);
+    const counts = allNames.map(() => [0, 0, 0, 0]);
     for (const row of rounds) {
       for (let c = 0; c < 8; c += 4) {
         const fa = isF[row[c]] + isF[row[c + 1]], fb = isF[row[c + 2]] + isF[row[c + 3]];
