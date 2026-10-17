@@ -333,17 +333,21 @@
   // ---- 대진 생성 ----
   const R = 10;  // 라운드 수. 선수 인덱스는 0~4 클럽원, 5~ 게스트
 
-  // 남남 vs 여여 1경기의 페널티는 남복·여복 페널티 합계 상한(20 × 1000000000)보다 크다.
+  // 남남 vs 여여 1경기의 페널티는 남복·여복 페널티 합계 상한(20 × 100000000000)보다 크다.
   // 남복·여복 1경기 감소의 페널티가 나머지 유한 페널티 합계 상한보다 크다.
-  // 파트너 페널티는 최대 4 × (R - 1)² × 1000000 = 324,000,000이다.
+  // 기타 경기(양 팀 여성 수가 다름)의 남자 게스트는 최대 10경기 × 3명 = 30명이므로 합계가 sameSex 1건보다 작다.
+  // 파트너 페널티는 최대 4 × (R - 1)² × 1000000 = 324,000,000으로 guestOther 1건보다 작다.
+  // otherBalance는 남자 클럽원의 기타 경기 횟수 제곱합. 전형적인 분포(4경기 이하)에서는
+  // 파트너 1회 반복(1000000)보다 작고 연속 반복 몇 건(10000)보다 크다.
   // 연속 반복은 최대 8 × (R - 1)건. 하위 페널티 합은 10000 미만이므로
-  // 남복·여복 최대화 > 전체 파트너 반복 최소화 > 연속 파트너 반복 최소화를 유지한다.
-  const W = { gender: 60, partner: 1000000, consecutive: 10000, opp: 1, mix: 3, rest: 10, sameSex: 1000000000, balance: 1, split: 100000000000 };
+  // 남복·여복 최대화 > 게스트 기타 제외 > 전체 파트너 반복 최소화 > 클럽원 기타 균등 > 연속 파트너 반복 최소화를 유지한다.
+  // streak는 휴식 없이 이어지는 경기 수의 제곱합. 10명이면 1인당 22(3·3·2)~64(8)라서 차이 합이 10000 미만이다.
+  const W = { gender: 60, partner: 1000000, consecutive: 10000, opp: 1, mix: 3, rest: 10, sameSex: 100000000000, balance: 1, split: 10000000000000, guestOther: 1000000000, otherBalance: 50000, streak: 20 };
 
   function scheduleCost(rounds, isF, preferSameSex) {
     const P = isF.length;
     let cost = 0;
-    const mixed = new Uint8Array(P);
+    const mixed = new Uint8Array(P), other = new Uint8Array(P), run = new Uint8Array(P);
     const partner = new Uint8Array(P * P), opp = new Uint8Array(P * P);
     const lastRest = new Int8Array(P).fill(-9);
     const lastPartner = new Int8Array(P).fill(-1);
@@ -355,6 +359,7 @@
         const p = row[i], partner = row[i ^ 1];
         if (lastPartner[p] === partner) cost += W.consecutive;
         lastPartner[p] = partner;
+        run[p]++;
       }
       for (let c = 0; c < 8; c += 4) {
         const a = row[c], b = row[c + 1], x = row[c + 2], y = row[c + 3];
@@ -368,6 +373,13 @@
         if (fa === 1 && fb === 1) {
           mixed[a]++; mixed[b]++; mixed[x]++; mixed[y]++;
         }
+        // 기타 경기(남남 vs 남녀, 남녀 vs 여여)의 남자는 게스트를 피하고 클럽원끼리 횟수를 맞춘다.
+        if (fa !== fb) {
+          for (const p of [a, b, x, y]) {
+            if (isF[p]) continue;
+            if (p < 5) other[p]++; else cost += W.guestOther;
+          }
+        }
         partner[key(a, b)]++; partner[key(x, y)]++;
         opp[key(a, x)]++; opp[key(a, y)]++; opp[key(b, x)]++; opp[key(b, y)]++;
         if ((a < 5) === (b < 5)) cost += W.mix;
@@ -377,8 +389,12 @@
         const p = row[i], gap = r - lastRest[p];
         if (gap < 3) cost += W.rest * (3 - gap);
         lastRest[p] = r;
+        // 쉬기 전까지 이어진 연속 출전. 긴 연속일수록 크게 부과해 휴식을 고르게 퍼뜨린다.
+        cost += W.streak * run[p] * run[p];
+        run[p] = 0;
       }
     }
+    for (const n of run) cost += W.streak * n * n;
     for (let i = 0; i < P * P; i++) {
       if (partner[i] > 1) cost += W.partner * (partner[i] - 1) ** 2;
       cost += W.opp * opp[i] * opp[i];
@@ -386,6 +402,7 @@
     if (preferSameSex) {
       for (const n of mixed) cost += W.balance * n * n;
     }
+    for (const n of other) cost += W.otherBalance * n * n;
     return cost;
   }
 
@@ -430,9 +447,13 @@
     const swap = (row, i, j) => { const t = row[i]; row[i] = row[j]; row[j] = t; };
     let cost = scheduleCost(rounds, isF, preferSameSex);
     let bestCost = cost, best = rounds.map(row => row.slice());
-    const ITER = 60000;
-    for (let i = 0; i < ITER; i++) {
-      const T = 0.3 * W.partner * (1 - i / ITER) ** 3 + 0.05;
+    // 처음 WARM회는 guestOther 장벽(최대 6 × 1000000000)을 넘을 수 있는 온도에서 시작해 3 × 100000까지 내린다.
+    // 휴식 배치를 바꾸는 중간 상태가 게스트 기타 경기를 만들어도 통과하도록 한다. sameSex 이상은 이때도 넘지 않는다.
+    const ITER = 60000, WARM = 15000;
+    for (let i = -WARM; i < ITER; i++) {
+      const T = i < 0
+        ? 0.3 * W.partner * 10000 ** (-i / WARM)
+        : 0.3 * W.partner * (1 - i / ITER) ** 3 + 0.05;
       const r = (Math.random() * R) | 0, row = rounds[r];
       let undo;
       const move = Math.random();

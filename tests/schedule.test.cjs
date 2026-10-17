@@ -217,6 +217,57 @@ test('같은 경기 구성이면 휴식이 붙어 있는 순서보다 간격을 
     context.scheduleCost(separated, Array(10).fill(0), false));
 });
 
+// 선수별로 휴식 없이 이어진 경기 수의 최댓값.
+function longestStreak(rounds, players) {
+  let longest = 0;
+  for (const p of players) {
+    let run = 0;
+    for (const row of rounds) {
+      run = row.indexOf(p) >= 8 ? 0 : run + 1;
+      longest = Math.max(longest, run);
+    }
+  }
+  return longest;
+}
+
+test('같은 경기 구성이면 연속 출전이 긴 순서보다 휴식을 퍼뜨린 순서를 선호한다', () => {
+  const { context } = loadPage('setup.html');
+  // 공유된 7남·3녀 대진. 3번은 R2~R9 8경기 연속이다. 연속 파트너는 없고 휴식 간격은 3 이상이다.
+  const isF = [0, 0, 0, 0, 1, 0, 0, 0, 1, 1];
+  const rounds = '6157289430063574928108937215643617849052312058649707251983646703491852053769421821658943071062547893'
+    .match(/.{10}/g).map(row => [...row].map(Number));
+  const spread = [2, 1, 5, 4, 3, 8, 9, 10, 7, 6].map(r => rounds[r - 1]);
+  inspect(rounds, isF);
+  assert.equal(longestStreak(rounds, isF.map((_, p) => p)), 8);
+  assert.equal(longestStreak(spread, isF.map((_, p) => p)), 5);
+  assert.equal(consecutivePartners(rounds), 0);
+  assert.equal(consecutivePartners(spread), 0);
+  assert.ok(context.scheduleCost(spread, isF, false) < context.scheduleCost(rounds, isF, false));
+});
+
+test('연속 출전 페널티 차이는 연속 파트너 1건보다 작다', () => {
+  const page = loadPage('setup.html');
+  // 10명이 8경기·휴식 2회일 때 1인당 연속 출전 제곱합은 22(3·3·2)~64(8)다.
+  assert.ok(10 * (64 - 22) * page.read('W.streak') < page.read('W.consecutive'));
+});
+
+test('7남·3녀 생성은 남복 최대·파트너 반복 최소를 유지하면서 연속 출전을 6경기 이하로 줄인다', () => {
+  const isF = [0, 0, 0, 0, 1, 0, 0, 0, 1, 1];
+  for (const seed of [1, 7, 42, 20260917, 0xffffffff]) {
+    const rounds = generate(isF, seed);
+    inspect(rounds, isF);
+    // 기타 경기 4개에 여자끼리 짝이 하나씩 생기므로 여자 3명 중 한 쌍은 반드시 한 번 반복된다.
+    const pairs = new Map();
+    for (const row of rounds) for (let i = 0; i < 8; i += 2) {
+      const key = [row[i], row[i + 1]].sort().join(',');
+      pairs.set(key, (pairs.get(key) || 0) + 1);
+    }
+    assert.equal([...pairs.values()].reduce((sum, n) => sum + (n - 1) ** 2, 0), 1, `seed ${seed}`);
+    assert.ok(longestStreak(rounds, isF.map((_, p) => p)) <= 6, `seed ${seed}`);
+    assert.equal(consecutivePartners(rounds), 0, `seed ${seed}`);
+  }
+});
+
 test('같은 선수·휴식 구성에서는 파트너와 상대를 다양하게 만나는 대진을 선호한다', () => {
   const { context } = loadPage('setup.html');
   const row = Array.from({ length: 10 }, (_, p) => p);
@@ -328,6 +379,66 @@ test('남남 vs 여여 페널티는 남복·여복 페널티 합계 상한보다
   const page = loadPage('setup.html');
   assert.ok(page.read('W.split') > 20 * page.read('W.sameSex'));
 });
+
+// 기타 경기(양 팀 여성 수가 다름)에서 선수별 참여 횟수. 남자 클럽원은 인덱스 0~4 중 남성이다.
+function otherCounts(rounds, isF) {
+  const counts = Array(isF.length).fill(0);
+  for (const row of rounds) {
+    for (let c = 0; c < 8; c += 4) {
+      const a = isF[row[c]] + isF[row[c + 1]], b = isF[row[c + 2]] + isF[row[c + 3]];
+      if (a !== b) row.slice(c, c + 4).forEach(p => counts[p]++);
+    }
+  }
+  return counts;
+}
+
+test('기타 경기 게스트 제외 페널티는 파트너 반복 상한보다 크고 합계는 남복·여복 1경기보다 작다', () => {
+  const page = loadPage('setup.html');
+  assert.ok(page.read('W.guestOther') > 4 * 81 * page.read('W.partner'));
+  assert.ok(30 * page.read('W.guestOther') < page.read('W.sameSex'));
+});
+
+test('기타 경기에 남자 게스트가 들어가면 남자 클럽원이 들어간 같은 대진보다 점수가 나쁘다', () => {
+  const page = loadPage('setup.html'), { context } = page;
+  // 0~2 여성, 3·4 남자 클럽원, 5~9 남자 게스트. 1코트는 여여 vs 여남(기타), 2코트는 게스트 남복.
+  const isF = [1, 1, 1, 0, 0, 0, 0, 0, 0, 0];
+  const clubRow = [0, 1, 2, 3, 5, 6, 7, 8, 4, 9];
+  const guestRow = [0, 1, 2, 5, 3, 6, 7, 8, 4, 9];
+  const club = Array.from({ length: 10 }, () => clubRow.slice());
+  const guest = Array.from({ length: 10 }, () => guestRow.slice());
+  // 클럽원 대진은 선수 3의 기타 10회에 otherBalance(100 × 50000)가 붙지만 게스트 10회 페널티가 훨씬 크다.
+  const diff = context.scheduleCost(guest, isF, false) - context.scheduleCost(club, isF, false);
+  assert.ok(diff > 9 * page.read('W.guestOther'));
+});
+
+test('기타 경기 횟수가 고르지 않은 남자 클럽원 배정은 고른 배정보다 점수가 나쁘다', () => {
+  const page = loadPage('setup.html'), { context } = page;
+  const isF = [1, 1, 1, 0, 0, 0, 0, 0, 0, 0];
+  // 기타 경기의 남자가 매 라운드 클럽원 3인 경우와 3·4가 번갈아 드는 경우. 나머지 자리는 같다.
+  const even = Array.from({ length: 10 }, (_, r) => r % 2 ? [0, 1, 2, 4, 5, 6, 7, 8, 3, 9] : [0, 1, 2, 3, 5, 6, 7, 8, 4, 9]);
+  const uneven = Array.from({ length: 10 }, () => [0, 1, 2, 3, 5, 6, 7, 8, 4, 9]);
+  const diff = context.scheduleCost(uneven, isF, false) - context.scheduleCost(even, isF, false);
+  // 제곱합 100 vs 50. 파트너 반복은 균등 배정이 오히려 적다(0-1 쌍은 같고 2-3·2-4 쌍이 나뉜다).
+  assert.ok(diff > 0);
+  assert.ok(diff >= 50 * page.read('W.otherBalance') - 10 * page.read('W.partner') * 81);
+});
+
+for (const clubWomen of [1, 2]) {
+  test(`7남·3녀(클럽원 여성 ${clubWomen}명): 남자 게스트는 기타 경기에 없고 남자 클럽원의 기타 횟수 차이는 1 이하`, () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const isF = Array.from({ length: 10 }, (_, p) => p < clubWomen || (p >= 5 && p < 5 + 3 - clubWomen) ? 1 : 0);
+      const rounds = generate(isF, seed * 7);
+      const { games } = inspect(rounds, isF);
+      assert.ok(games[3] > 0, `seed ${seed}: 기타 경기가 있어야 검증할 수 있다`);
+      const counts = otherCounts(rounds, isF);
+      const clubMen = [], guestMen = [];
+      isF.forEach((f, p) => { if (!f) (p < 5 ? clubMen : guestMen).push(p); });
+      guestMen.forEach(p => assert.equal(counts[p], 0, `seed ${seed}: 게스트 ${p}가 기타 경기 ${counts[p]}회`));
+      const clubCounts = clubMen.map(p => counts[p]);
+      assert.ok(Math.max(...clubCounts) - Math.min(...clubCounts) <= 1, `seed ${seed}: 클럽원 기타 횟수 ${clubCounts}`);
+    }
+  });
+}
 
 test('남녀 2~3명이 섞여도 남남 vs 여여 경기를 만들지 않는다 (게스트 수·결석 포함)', () => {
   for (const total of [8, 9, 10, 11, 12, 15]) {
