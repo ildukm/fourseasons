@@ -268,6 +268,45 @@ test('7남·3녀 생성은 남복 최대·파트너 반복 최소를 유지하�
   }
 });
 
+// 라운드별 기타 경기(양 팀 여성 수가 다름) 수.
+function otherMatches(rounds, isF) {
+  return rounds.map(row => [0, 4].filter(c =>
+    isF[row[c]] + isF[row[c + 1]] !== isF[row[c + 2]] + isF[row[c + 3]]).length);
+}
+
+test('같은 경기 구성이면 기타 경기를 앞에 둔 순서보다 뒤에 둔 순서를 선호한다', () => {
+  const page = loadPage('setup.html');
+  const isF = [0, 0, 0, 0, 1, 0, 0, 0, 1, 1];
+  const rounds = '6157289430063574928108937215643617849052312058649707251983646703491852053769421821658943071062547893'
+    .match(/.{10}/g).map(row => [...row].map(Number));
+  // 라운드 순서를 뒤집으면 연속 출전·휴식 간격·연속 파트너가 그대로라서 기타 경기 위치만 달라진다.
+  const reversed = rounds.slice().reverse();
+  const remaining = rs => otherMatches(rs, isF).reduce((sum, n, r) => sum + n * (9 - r), 0);
+  assert.deepEqual(otherMatches(rounds, isF), [1, 0, 0, 1, 0, 0, 1, 0, 1, 0]);
+  assert.equal(page.context.scheduleCost(rounds, isF, false) - page.context.scheduleCost(reversed, isF, false),
+    page.read('W.otherLate') * (remaining(rounds) - remaining(reversed)));
+  assert.ok(remaining(rounds) > remaining(reversed));
+  assert.ok(page.context.scheduleCost(reversed, isF, false) < page.context.scheduleCost(rounds, isF, false));
+});
+
+test('기타 경기 후반 배치 페널티 차이는 연속 파트너 1건보다 작다', () => {
+  const page = loadPage('setup.html');
+  // 라운드당 기타 경기는 2개 이하다. 차이가 가장 큰 경우는 2개짜리 5라운드를 앞에서 뒤로 옮길 때다.
+  assert.ok(2 * (9 + 7 + 5 + 3 + 1) * page.read('W.otherLate') < page.read('W.consecutive'));
+});
+
+test('7남·3녀 생성은 연속 출전을 늘리지 않고 기타 경기를 4라운드 이후로 미룬다', () => {
+  const isF = [0, 0, 0, 0, 1, 0, 0, 0, 1, 1];
+  for (const seed of [1, 7, 42, 20260917, 0xffffffff]) {
+    const rounds = generate(isF, seed);
+    const counts = otherMatches(rounds, isF);
+    assert.equal(counts.reduce((a, b) => a + b, 0), 4, `seed ${seed}`);
+    assert.ok(counts.findIndex(n => n > 0) >= 3, `seed ${seed}: ${counts.join('')}`);
+    assert.ok(longestStreak(rounds, isF.map((_, p) => p)) <= 6, `seed ${seed}`);
+    assert.equal(consecutivePartners(rounds), 0, `seed ${seed}`);
+  }
+});
+
 test('같은 선수·휴식 구성에서는 파트너와 상대를 다양하게 만나는 대진을 선호한다', () => {
   const { context } = loadPage('setup.html');
   const row = Array.from({ length: 10 }, (_, p) => p);

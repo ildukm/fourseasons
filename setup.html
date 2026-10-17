@@ -342,7 +342,9 @@
   // 연속 반복은 최대 8 × (R - 1)건. 하위 페널티 합은 10000 미만이므로
   // 남복·여복 최대화 > 게스트 기타 제외 > 전체 파트너 반복 최소화 > 클럽원 기타 균등 > 연속 파트너 반복 최소화를 유지한다.
   // streak는 휴식 없이 이어지는 경기 수의 제곱합. 10명이면 1인당 22(3·3·2)~64(8)라서 차이 합이 10000 미만이다.
-  const W = { gender: 60, partner: 1000000, consecutive: 10000, opp: 1, mix: 3, rest: 10, sameSex: 100000000000, balance: 1, split: 10000000000000, guestOther: 1000000000, otherBalance: 50000, streak: 20 };
+  // otherLate는 기타 경기마다 뒤에 남은 라운드 수 × 100. 라운드당 기타 경기는 2개 이하라서
+  // 라운드 순서에 따른 차이는 2 × (9 + 7 + 5 + 3 + 1) × 100 = 5000 이하로 연속 반복 1건보다 작다.
+  const W = { gender: 60, partner: 1000000, consecutive: 10000, opp: 1, mix: 3, rest: 10, sameSex: 100000000000, balance: 1, split: 10000000000000, guestOther: 1000000000, otherBalance: 50000, streak: 20, otherLate: 100 };
 
   function scheduleCost(rounds, isF, preferSameSex) {
     const P = isF.length;
@@ -374,7 +376,9 @@
           mixed[a]++; mixed[b]++; mixed[x]++; mixed[y]++;
         }
         // 기타 경기(남남 vs 남녀, 남녀 vs 여여)의 남자는 게스트를 피하고 클럽원끼리 횟수를 맞춘다.
+        // 기타 경기 자체는 가능하면 후반 라운드로 미룬다.
         if (fa !== fb) {
+          cost += W.otherLate * (R - 1 - r);
           for (const p of [a, b, x, y]) {
             if (isF[p]) continue;
             if (p < 5) other[p]++; else cost += W.guestOther;
